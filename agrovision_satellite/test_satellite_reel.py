@@ -55,8 +55,10 @@ def main():
         print("\n📊 RÉSULTATS:")
         print(f"   Pixels analysés: {resultats['pixels_total']}")
         print(f"   Pixels malades: {resultats['pixels_malades']}")
-        print(f"   Taux d'infection: {resultats['pourcentage_malade']:.1f}%")
-        print(f"   Surface infectée: {resultats['surface_malade_ha']:.2f} ha")
+        print(f"   Taux d'infection (pixels): {resultats['pourcentage_pixels']:.1f}%")
+        print(f"   Surface parcelle: {resultats['surface_totale_ha']} ha")
+        print(f"   Surface infectée réelle: {resultats['surface_infectee_ha']:.3f} ha")
+        print(f"   Taux d'infection réel: {resultats['pourcentage_reel']:.1f}%")
         
         # 7. Sauvegarder le graphique
         sat.plot_ndvi(

@@ -41,7 +41,53 @@ class RealSatellite:
             logger.error(f"❌ Erreur EE: {e}")
             logger.info("🔑 Vérifie l'enregistrement du projet sur https://code.earthengine.google.com/register")
             raise e
-    
+
+    def normalize_evi(self, evi_array):
+        """
+        Normalise les valeurs EVI aberrantes
+        
+        EVI théorique est entre -1 et 1, mais peut dépasser à cause de :
+        - Divisions par zéro
+        - Pixels nuageux
+        - Sol très brillant
+        
+        Args:
+            evi_array: tableau numpy EVI brut
+            
+        Returns:
+            evi_normalise: tableau numpy EVI normalisé
+        """
+        logger.info(f"📊 EVI avant normalisation: min={evi_array.min():.2f}, max={evi_array.max():.2f}, moy={evi_array.mean():.2f}")
+        
+        # 1. Remplacer les infinis par NaN
+        evi_array = np.where(np.isinf(evi_array), np.nan, evi_array)
+        
+        # 2. Calculer les percentiles pour éviter les extrêmes
+        p1 = np.nanpercentile(evi_array, 1)  # 1er percentile
+        p99 = np.nanpercentile(evi_array, 99)  # 99e percentile
+        
+        logger.info(f"   Percentiles: 1%={p1:.2f}, 99%={p99:.2f}")
+        
+        # 3. Clipper aux percentiles (enlever les 1% extrêmes de chaque côté)
+        evi_clip = np.clip(evi_array, p1, p99)
+        
+        # 4. Normaliser entre -1 et 1 (théorique)
+        # Formule: (x - min) / (max - min) * 2 - 1
+        min_val = np.nanmin(evi_clip)
+        max_val = np.nanmax(evi_clip)
+        
+        if max_val > min_val:  # Éviter la division par zéro
+            evi_normalise = 2 * (evi_clip - min_val) / (max_val - min_val) - 1
+        else:
+            evi_normalise = evi_clip
+        
+        # 5. Remplacer les NaN restants par 0
+        evi_normalise = np.nan_to_num(evi_normalise, nan=0.0)
+        
+        logger.info(f"📊 EVI après normalisation: min={evi_normalise.min():.2f}, max={evi_normalise.max():.2f}, moy={evi_normalise.mean():.2f}")
+        
+        return evi_normalise
+
     def compute_all_indices(self, image):
         """
         Calcule plusieurs indices de végétation
@@ -187,6 +233,10 @@ class RealSatellite:
         # Extraire NDVI pour la compatibilité avec l'ancien code
         ndvi_array = results['NDVI']
         
+        # Normaliser EVI
+        if 'EVI' in results:
+            results['EVI'] = self.normalize_evi(results['EVI'])
+
         logger.info(f"✅ Images récupérées, taille finale: {ndvi_array.shape}")
         for idx_name, idx_array in results.items():
             logger.info(f"   {idx_name}: min={idx_array.min():.2f}, max={idx_array.max():.2f}, moy={idx_array.mean():.2f}")
@@ -200,7 +250,7 @@ class RealSatellite:
         Args:
             ndvi: image NDVI
             seuil: valeur en dessous de laquelle on considère comme malade
-                   (si None, utilise la valeur de config)
+                (si None, utilise la valeur de config)
             
         Returns:
             dict: résultats
@@ -218,27 +268,29 @@ class RealSatellite:
         pixels_malades = np.sum(masque_malade)
         pixels_total = ndvi.shape[0] * ndvi.shape[1]
         
-        # 3. Calculer le pourcentage
-        pourcentage_malade = (pixels_malades / pixels_total) * 100
+        # 3. Calculer le pourcentage (basé sur les pixels)
+        pourcentage_pixels = (pixels_malades / pixels_total) * 100
         
-        # 4. Estimer la surface en hectares (adapté à la résolution réelle)
-        # Sentinel-2 a une résolution de 10m/pixel
-        surface_par_pixel_ha = 0.01  # 100 m² = 0.01 ha
-        surface_malade_ha = pixels_malades * surface_par_pixel_ha
+        # 4. Calculer la surface réelle avec notre nouvelle méthode
+        surface_infectee_ha, surface_totale_ha, pourcentage_reel = self.calculate_real_area(
+            pixels_malades, pixels_total
+        )
         
         # 5. Résultats
         resultats = {
             'pixels_malades': int(pixels_malades),
             'pixels_total': int(pixels_total),
-            'pourcentage_malade': float(pourcentage_malade),
-            'surface_malade_ha': float(surface_malade_ha),
+            'pourcentage_pixels': float(pourcentage_pixels),
+            'pourcentage_reel': float(pourcentage_reel),
+            'surface_totale_ha': float(surface_totale_ha),
+            'surface_infectee_ha': float(surface_infectee_ha),
             'masque': masque_malade,
             'seuil_utilise': seuil
         }
         
         logger.info(f"📊 Analyse (seuil={seuil}):")
-        logger.info(f"   Pixels malades: {pixels_malades}/{pixels_total} ({pourcentage_malade:.1f}%)")
-        logger.info(f"   Surface estimée: {surface_malade_ha:.2f} hectares")
+        logger.info(f"   Pixels malades: {pixels_malades}/{pixels_total} ({pourcentage_pixels:.1f}%)")
+        logger.info(f"   Surface infectée réelle: {surface_infectee_ha:.3f} ha sur {surface_totale_ha} ha")
         
         return resultats
     
@@ -366,6 +418,41 @@ class RealSatellite:
         
         plt.show()
 
+    def calculate_real_area(self, pixels_malades, pixels_total):
+        """
+        Calcule la surface réelle infectée en hectares
+        
+        Args:
+            pixels_malades: nombre de pixels malades
+            pixels_total: nombre total de pixels dans l'image
+        
+        Returns:
+            float: surface infectée en hectares
+            float: surface totale en hectares
+            float: ratio (pourcentage)
+        """
+        # Surface réelle de la parcelle (depuis config)
+        surface_totale_ha = self.config['parcelle']['surface_ha']
+        
+        # Calculer la surface représentée par chaque pixel
+        surface_par_pixel = surface_totale_ha / pixels_total
+        
+        # Surface infectée
+        surface_infectee_ha = pixels_malades * surface_par_pixel
+        
+        # Pourcentage (logique)
+        pourcentage = (pixels_malades / pixels_total) * 100
+        
+        logger.info(f"📐 Calcul de surface réel:")
+        logger.info(f"   Parcelle: {surface_totale_ha} ha")
+        logger.info(f"   Pixels total: {pixels_total}")
+        logger.info(f"   Surface par pixel: {surface_par_pixel:.6f} ha")
+        logger.info(f"   Pixels malades: {pixels_malades}")
+        logger.info(f"   Surface infectée: {surface_infectee_ha:.3f} ha")
+        logger.info(f"   Pourcentage: {pourcentage:.2f}%")
+        
+        return surface_infectee_ha, surface_totale_ha, pourcentage
+
 
 # Test du module si exécuté directement
 if __name__ == "__main__":
@@ -407,3 +494,4 @@ if __name__ == "__main__":
                          save_path="data/outputs/multi_indices_test.png")
     
     print("\n✅ Test terminé")
+
