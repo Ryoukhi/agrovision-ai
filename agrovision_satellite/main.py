@@ -23,7 +23,7 @@ sys.path.append('.')
 
 # Remplacer l'import du simulateur par le réel
 # from modules.satellite_simulator import SatelliteSimulator   ← À SUPPRIMER
-from modules.satellite_real import RealSatellite  # ← À AJOUTER
+from modules.satellite_real import RealSatellite
 from modules.weather_api import WeatherAPI
 from modules.spread_model import EpidemiologicalModel
 
@@ -88,7 +88,7 @@ class AgroVisionPipeline:
     
     def run_satellite_analysis(self):
         """
-        Étape 1: Analyse satellite (réelle)
+        Étape 1: Analyse satellite réelle
         """
         logger.info("\n" + "="*60)
         logger.info("🛰️  ÉTAPE 1 - ANALYSE SATELLITE RÉELLE")
@@ -98,14 +98,24 @@ class AgroVisionPipeline:
         coords = self.config['parcelle']['coordinates']
         logger.info(f"📍 Parcelle: {coords}")
         
-        # Définir la période d'analyse (60 derniers jours)
-        date_fin = datetime.now().strftime('%Y-%m-%d')
-        date_debut = (datetime.now() - timedelta(days=60)).strftime('%Y-%m-%d')
-        logger.info(f"📅 Période: {date_debut} à {date_fin}")
+        # Récupérer la période d'analyse de la config
+        periode_jours = self.config.get('analyse', {}).get('periode_jours', 60)
+        date_fin_config = self.config.get('analyse', {}).get('date_fin', 'auto')
+        
+        # Définir la date de fin
+        if date_fin_config == 'auto':
+            date_fin = datetime.now().strftime('%Y-%m-%d')
+        else:
+            date_fin = date_fin_config
+        
+        # Calculer la date de début
+        date_debut = (datetime.strptime(date_fin, '%Y-%m-%d') - timedelta(days=periode_jours)).strftime('%Y-%m-%d')
+        
+        logger.info(f"📅 Période: {date_debut} à {date_fin} ({periode_jours} jours)")
         
         try:
-            # Récupérer l'image NDVI réelle
-            ndvi, date_image = self.satellite.get_ndvi_image(
+            # Récupérer l'image NDVI réelle avec tous les indices
+            ndvi, all_indices, date_image = self.satellite.get_ndvi_image(
                 coords,
                 date_debut,
                 date_fin,
@@ -116,10 +126,16 @@ class AgroVisionPipeline:
             logger.info(f"   Dimensions: {ndvi.shape}")
             logger.info(f"   NDVI min: {ndvi.min():.2f}, max: {ndvi.max():.2f}, moy: {ndvi.mean():.2f}")
             
-            # Détecter les zones malades (seuil à 0.3, à ajuster selon les cultures)
-            results = self.satellite.calculate_infected_area(ndvi, seuil=0.3)
+            # Stocker tous les indices pour usage ultérieur
+            self.ndvi = ndvi
+            self.all_indices = all_indices
+            self.image_date = date_image
             
-            # Sauvegarder la visualisation
+            # Détecter les zones malades (seuil depuis config)
+            seuil = self.config.get('detection', {}).get('ndvi_seuil', 0.35)
+            results = self.satellite.calculate_infected_area(ndvi, seuil=seuil)
+            
+            # Sauvegarder la visualisation NDVI
             save_path = self.output_dir / f"satellite_{date_image}.png"
             self.satellite.plot_ndvi(
                 ndvi,
@@ -128,24 +144,40 @@ class AgroVisionPipeline:
                 save_path=save_path
             )
             
-            # Calculer les plants infectés en fonction de la surface réelle
-            ratio_infection = results['pixels_malades'] / results['pixels_total']
-            self.infected_plants = int(self.total_plants * ratio_infection)
-            self.infected_area = self.surface_ha * ratio_infection
-            self.image_date = date_image
+            # Sauvegarder la visualisation multi-indices (optionnel)
+            multi_save_path = self.output_dir / f"multi_indices_{date_image}.png"
+            self.satellite.plot_all_indices(
+                all_indices,
+                results['masque'],
+                save_path=multi_save_path
+            )
+            
+            # Récupérer les résultats
+            self.infected_pixels = results['pixels_malades']
+            self.total_pixels = results['pixels_total']
+            self.infected_percent = results['pourcentage_pixels']
+            self.infected_area = results['surface_infectee_ha']
+            self.total_area = results['surface_totale_ha']
             
             logger.info(f"\n📊 RÉSULTATS ANALYSE:")
             logger.info(f"   Date image: {date_image}")
-            logger.info(f"   Pixels analysés: {results['pixels_total']}")
-            logger.info(f"   Pixels malades: {results['pixels_malades']}")
-            logger.info(f"   Taux d'infection: {ratio_infection*100:.1f}%")
-            logger.info(f"   Surface infectée: {self.infected_area:.2f} ha")
+            logger.info(f"   Pixels analysés: {self.total_pixels}")
+            logger.info(f"   Pixels malades: {self.infected_pixels}")
+            logger.info(f"   Taux d'infection: {self.infected_percent:.1f}%")
+            logger.info(f"   Surface parcelle: {self.total_area:.2f} ha")
+            logger.info(f"   Surface infectée: {self.infected_area:.3f} ha")
+            
+            # Calculer les plants infectés (densité paramétrable)
+            plants_per_ha = self.config.get('parcelle', {}).get('plants_per_ha', 10000)
+            self.infected_plants = int(self.infected_area * plants_per_ha)
+            
             logger.info(f"   Plants infectés: {self.infected_plants:,}")
             
             return {
                 'ndvi': ndvi,
-                'masque': results['masque'],
-                'ratio_infection': ratio_infection,
+                'all_indices': all_indices,
+                'infected_pixels': self.infected_pixels,
+                'infected_percent': self.infected_percent,
                 'infected_area': self.infected_area,
                 'infected_plants': self.infected_plants,
                 'date_image': date_image
@@ -159,17 +191,23 @@ class AgroVisionPipeline:
             from modules.satellite_simulator import SatelliteSimulator
             sim = SatelliteSimulator(self.config)
             ndvi = sim.generate_ndvi_image(avec_maladies=True)
-            results = sim.calculate_infected_area(ndvi, seuil=0.3)
+            
+            # Simuler des résultats
+            results = sim.calculate_infected_area(ndvi, seuil=0.35)
             
             self.image_date = "simulation"
-            ratio_infection = results['pixels_malades'] / results['pixels_total']
-            self.infected_plants = int(self.total_plants * ratio_infection)
-            self.infected_area = self.surface_ha * ratio_infection
+            self.infected_pixels = results['pixels_malades']
+            self.total_pixels = results['pixels_total']
+            self.infected_percent = results['pourcentage_malade']
+            self.infected_area = self.config['parcelle']['surface_ha'] * (self.infected_percent / 100)
+            self.total_area = self.config['parcelle']['surface_ha']
+            
+            plants_per_ha = self.config.get('parcelle', {}).get('plants_per_ha', 10000)
+            self.infected_plants = int(self.infected_area * plants_per_ha)
             
             return {
                 'ndvi': ndvi,
-                'masque': results['masque'],
-                'ratio_infection': ratio_infection,
+                'infected_percent': self.infected_percent,
                 'infected_area': self.infected_area,
                 'infected_plants': self.infected_plants,
                 'date_image': self.image_date

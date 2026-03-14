@@ -79,3 +79,60 @@
 2026-03-12 15:25:32,326 - __main__ - INFO - 
 ============================================================
 2026-03-12 15:25:32,327 - __main__ - INFO - ============================================================
+2026-03-14 15:51:54,111 - __main__ - INFO - ============================================================
+2026-03-14 15:51:54,148 - __main__ - INFO - ============================================================
+2026-03-14 15:57:52,513 - __main__ - INFO - ============================================================
+2026-03-14 15:57:52,513 - __main__ - INFO - ============================================================
+2026-03-14 15:58:01,346 - __main__ - INFO -    Surface: 0.5 ha
+2026-03-14 15:58:01,346 - __main__ - INFO -    Population estimée: 5,000 plants
+2026-03-14 15:58:01,346 - __main__ - INFO -    Coordonnées: 4.56, 12.57
+2026-03-14 15:58:01,346 - __main__ - INFO - 
+============================================================
+2026-03-14 15:58:01,348 - __main__ - INFO - ============================================================
+2026-03-14 15:58:10,470 - modules.satellite_real - INFO -    NDVI taille originale: (335, 336)
+2026-03-14 15:58:14,636 - modules.satellite_real - INFO -    EVI taille originale: (335, 336)
+2026-03-14 15:58:17,164 - modules.satellite_real - INFO -    SAVI taille originale: (335, 336)
+2026-03-14 15:58:17,169 - modules.satellite_real - INFO -    Percentiles: 1%=-3.82, 99%=-0.86
+2026-03-14 15:58:17,174 - modules.satellite_real - INFO -    NDVI: min=0.20, max=0.63, moy=0.49
+2026-03-14 15:58:17,174 - modules.satellite_real - INFO -    EVI: min=-1.00, max=1.00, moy=0.34
+2026-03-14 15:58:17,174 - modules.satellite_real - INFO -    SAVI: min=0.30, max=0.95, moy=0.74
+2026-03-14 15:58:17,176 - __main__ - INFO -    Dimensions: (335, 336)
+2026-03-14 15:58:17,177 - __main__ - INFO -    NDVI min: 0.20, max: 0.63, moy: 0.49
+2026-03-14 15:58:17,178 - modules.satellite_real - INFO -    Parcelle: 0.5 ha
+2026-03-14 15:58:17,179 - modules.satellite_real - INFO -    Pixels total: 112560
+2026-03-14 15:58:17,179 - modules.satellite_real - INFO -    Surface par pixel: 0.000004 ha
+2026-03-14 15:58:17,179 - modules.satellite_real - INFO -    Pixels malades: 1994
+2026-03-14 15:58:17,179 - modules.satellite_real - INFO -    Surface infectée: 0.009 ha
+2026-03-14 15:58:17,179 - modules.satellite_real - INFO -    Pourcentage: 1.77%
+2026-03-14 15:58:17,180 - modules.satellite_real - INFO -    Pixels malades: 1994/112560 (1.8%)
+2026-03-14 15:58:17,180 - modules.satellite_real - INFO -    Surface infectée réelle: 0.009 ha sur 0.5 ha
+2026-03-14 15:59:14,294 - __main__ - INFO -    Date image: 2026-01-12
+2026-03-14 15:59:14,294 - __main__ - INFO -    Pixels analysés: 112560
+2026-03-14 15:59:14,294 - __main__ - INFO -    Pixels malades: 1994
+2026-03-14 15:59:14,295 - __main__ - INFO -    Taux d'infection: 1.8%
+2026-03-14 15:59:14,295 - __main__ - INFO -    Surface parcelle: 0.50 ha
+2026-03-14 15:59:14,295 - __main__ - INFO -    Surface infectée: 0.009 ha
+2026-03-14 15:59:14,295 - __main__ - INFO -    Plants infectés: 88
+2026-03-14 15:59:14,295 - __main__ - INFO - 
+============================================================
+2026-03-14 15:59:14,297 - __main__ - INFO - ============================================================
+2026-03-14 15:59:14,956 - __main__ - INFO -    Température: 24.5°C
+2026-03-14 15:59:14,956 - __main__ - INFO -    Humidité: 76%
+2026-03-14 15:59:14,956 - __main__ - INFO -    Vent: 1.7 m/s
+2026-03-14 15:59:14,956 - __main__ - INFO - 
+============================================================
+2026-03-14 15:59:14,957 - __main__ - INFO - ============================================================
+2026-03-14 15:59:14,958 - modules.spread_model - INFO -    Température: x1.00
+2026-03-14 15:59:14,958 - modules.spread_model - INFO -    Humidité: x1.08
+2026-03-14 15:59:14,958 - modules.spread_model - INFO -    Vent: x1.08
+2026-03-14 15:59:14,958 - modules.spread_model - INFO -    Nouveau beta: 0.351 (original: 0.300)
+2026-03-14 15:59:14,980 - __main__ - INFO -    Augmentation à 7 jours: +52%
+2026-03-14 15:59:14,981 - __main__ - INFO -    Infectés maintenant: 88
+2026-03-14 15:59:14,981 - __main__ - INFO -    Infectés dans 7 jours: 134
+2026-03-14 15:59:14,981 - __main__ - INFO -    Action: Intervention recommandée - Traitez les zones infectées
+2026-03-14 15:59:49,327 - __main__ - INFO - 
+============================================================
+2026-03-14 15:59:49,329 - __main__ - INFO - ============================================================
+2026-03-14 15:59:49,346 - __main__ - INFO - 
+============================================================
+2026-03-14 15:59:49,348 - __main__ - INFO - ============================================================
