@@ -1,0 +1,30 @@
+# Configuration AgroVision AI 2.0
+
+satellite:
+  source: "COPERNICUS/S2"
+  project_id: "coursmining-225016"
+  cloud_threshold: 20
+  start_date: "2026-01-01"
+  end_date: "2026-03-01"
+  indices:
+    - NDVI
+    - EVI     
+    - SAVI    
+
+detection:  # ← NOUVELLE SECTION
+  ndvi_seuil: 0.35  # ← Passage de 0.3 à 0.35
+  evi_seuil: 0.2    # (à ajuster selon la culture)
+  savi_seuil: 0.25  # (à ajuster selon la culture)
+
+parcelle:
+  nom: "Champ de test"
+  coordinates: [12.55, 4.55, 12.58, 4.58]  # [long_min, lat_min, long_max, lat_max]
+  surface_ha: 0.5  # Plus petit
+
+meteo:
+  api_key: "99af24940ae488aea278dca8d237c2dd"
+  forecast_days: 7
+
+outputs:
+  save_path: "./data/outputs"
+

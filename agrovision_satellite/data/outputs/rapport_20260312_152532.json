@@ -1,0 +1,36 @@
+{
+  "metadata": {
+    "date_analyse": "2026-03-12T15:25:32.317108",
+    "date_image_satellite": "2026-01-12",
+    "parcelle": "Champ de test",
+    "surface_ha": 0.5,
+    "plants_total": 5000,
+    "coordonnees": {
+      "lat": 4.5649999999999995,
+      "lon": 12.565000000000001
+    }
+  },
+  "satellite": {
+    "taux_infection_pourcent": 0.7,
+    "surface_infectee_ha": 0.0,
+    "plants_infectes": 34
+  },
+  "meteo": {
+    "temperature_moyenne": 26.6,
+    "humidite_moyenne": 64,
+    "vent_moyen": 1.8,
+    "conditions": "Favorables"
+  },
+  "prediction": {
+    "risque": "MODÉRÉ",
+    "couleur_risque": "🟡",
+    "evolution_7j_pourcent": 38.2,
+    "plants_infectes_7j": 47,
+    "action_recommandee": "Surveillance renforcée - Préparez des traitements"
+  },
+  "recommandations": {
+    "urgence": "Surveillance renforcée - Préparez des traitements",
+    "prochaine_analyse": "2026-03-19",
+    "notes": "Surveiller l'évolution des conditions météo"
+  }
+}
