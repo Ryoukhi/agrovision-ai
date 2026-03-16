@@ -8,10 +8,6 @@ from flask import Flask, jsonify
 from dotenv import load_dotenv
 
 from extensions import db, migrate, jwt, bcrypt
-from routes.download import download_bp
-
-# Dans create_app(), après les autres blueprints
-
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -50,6 +46,7 @@ def create_app():
     from routes.auth import auth_bp
     from routes.parcelles import parcelles_bp
     from routes.analyses import analyses_bp
+    from routes.download import download_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(parcelles_bp)

@@ -144,8 +144,17 @@ def get_image(analyse_id, type):
     else:
         return jsonify({'error': 'Type d\'image invalide'}), 400
     
-    if not path or not os.path.exists(path):
-        return jsonify({'error': 'Image non trouvée'}), 404
+    if not path:
+        return jsonify({'error': f'Chemin image {type} non disponible (analyse en cours ou échouée)'}), 404
+    
+    # Convertir en chemin absolu si nécessaire
+    full_path = os.path.abspath(path)
+    
+    if not os.path.exists(full_path):
+        return jsonify({
+            'error': f'Fichier image non trouvé: {full_path}',
+            'stored_path': path
+        }), 404
     
     from flask import send_file
-    return send_file(path, mimetype='image/png')
+    return send_file(full_path, mimetype='image/png')

@@ -1,0 +1,16 @@
+{
+  "date_analyse": "2026-03-16T20:06:09.922172",
+  "date_image_satellite": "2026-01-05",
+  "taux_infection": 100.0,
+  "surface_infectee_ha": 1.46,
+  "plants_infectes": 14600,
+  "temperature_moyenne": 26.9,
+  "humidite_moyenne": 81,
+  "vent_moyen": 1.8,
+  "risque": "FAIBLE",
+  "evolution_7j": -47.0,
+  "plants_infectes_7j": 7744,
+  "action_recommandee": "Surveillance normale - Pas d'action urgente",
+  "image_ndvi_path": "data\\outputs\\analyse_6_ndvi.png",
+  "image_multi_path": "data\\outputs\\analyse_6_multi.png"
+}

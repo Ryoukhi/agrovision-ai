@@ -48,7 +48,11 @@ class AnalyseEngine:
         
         # Dossier de sortie
         self.output_dir = Path(self.config['outputs']['save_path'])
+        # Si chemin relatif, le rendre absolu parrapport au répertoire du projet
+        if not self.output_dir.is_absolute():
+            self.output_dir = Path(__file__).parent.parent / self.output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        print(f"📁 Output directory: {self.output_dir}")
     
     def run_analyse(self, parcelle_id, nom, coords, surface_ha, plants_per_ha=10000):
         """
@@ -128,8 +132,23 @@ class AnalyseEngine:
             plants_infectes = int(surface_infectee_ha * plants_per_ha)
             date_image = "simulation"
             
-            image_ndvi_path = None
-            image_multi_path = None
+            # Sauvegarder les images du simulateur
+            image_ndvi_path = self.output_dir / f"analyse_{parcelle_id}_ndvi.png"
+            image_multi_path = self.output_dir / f"analyse_{parcelle_id}_multi.png"
+            
+            sim.plot_ndvi(
+                ndvi,
+                results['masque'],
+                f"Parcelle {nom} - {date_image}",
+                save_path=image_ndvi_path
+            )
+            
+            # Pour le multi-spectral en fallback, utiliser l'image NDVI
+            shutil.copy(str(image_ndvi_path), str(image_multi_path))
+            
+            print(f"✅ Analyse satellite simulée (fallback)")
+            print(f"   Taux infection: {ratio_infection*100:.1f}%")
+            print(f"   Images sauvegardées: {image_ndvi_path}")
         
         # 2. ANALYSE MÉTÉO
         print("\n🌤️ ÉTAPE 2 - ANALYSE MÉTÉO")
