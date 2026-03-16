@@ -19,16 +19,37 @@ export interface Parcelle {
   user_id: number;
 }
 
+export interface Analyse {
+  id: number;
+  date_analyse: string;
+  date_image_satellite: string;
+  taux_infection: number;
+  surface_infectee_ha: number;
+  plants_infectes: number;
+  temperature_moyenne: number;
+  humidite_moyenne: number;
+  vent_moyen: number;
+  risque: 'FAIBLE' | 'MODÉRÉ' | 'ÉLEVÉ' | 'CRITIQUE';
+  evolution_7j: number;
+  plants_infectes_7j: number;
+  action_recommandee: string;
+  rapport_json_path?: string;
+  image_ndvi_path?: string;
+  image_multi_path?: string;
+  parcelle_id: number;
+  created_at: string;
+}
+
 export interface Coordinate {
   latitude: number;
   longitude: number;
 }
 
-// Type pour la navigation (à importer partout)
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
   Home: undefined;
-  Map: undefined;                    // ← AJOUTÉ
-  ParcelleDetail: { parcelle: Parcelle };  // ← AJOUTÉ
+  Map: undefined;
+  ParcelleDetail: { parcelle: Parcelle };
+  AnalyseDetail: { analyse: Analyse };
 };

@@ -22,6 +22,10 @@ def get_parcelles():
         'surface_ha': p.surface_ha,
         'culture': p.culture,
         'created_at': p.created_at.isoformat(),
+        'long_min': p.long_min,
+        'lat_min': p.lat_min,
+        'long_max': p.long_max,
+        'lat_max': p.lat_max,
         'coords': {
             'long_min': p.long_min,
             'lat_min': p.lat_min,

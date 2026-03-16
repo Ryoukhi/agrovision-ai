@@ -36,7 +36,14 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const loadParcelles = async () => {
     try {
       const response = await api.get<Parcelle[]>('/parcelles');
-      setParcelles(response.data);
+      const mapped = response.data.map((p: any) => ({
+        ...p,
+        lat_min: Number(p.lat_min ?? p.coords?.lat_min),
+        lat_max: Number(p.lat_max ?? p.coords?.lat_max),
+        long_min: Number(p.long_min ?? p.coords?.long_min),
+        long_max: Number(p.long_max ?? p.coords?.long_max),
+      }));
+      setParcelles(mapped);
     } catch (error) {
       Alert.alert('Erreur', 'Impossible de charger les parcelles');
     } finally {

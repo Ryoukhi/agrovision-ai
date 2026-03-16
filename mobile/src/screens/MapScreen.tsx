@@ -1,9 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   TextInput, Alert, ScrollView, ActivityIndicator, Dimensions
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import * as Location from 'expo-location';
 import api from '../api/client';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList, Coordinate } from '../types';
@@ -26,8 +27,8 @@ const calculateApproximateArea = (points: Coordinate[]): number => {
   return Math.round(area * (111000 * metersPerLon) / 10000 * 100) / 100;
 };
 
-// ✅ HTML complet de la carte Leaflet (OSM)
-const getLeafletHTML = (points: Coordinate[]) => {
+// ✅ HTML amélioré avec géolocalisation
+const getLeafletHTML = (points: Coordinate[], userLocation: Coordinate | null, mapCenter: Coordinate) => {
   const polygonCoords = points.map(p => `[${p.latitude}, ${p.longitude}]`).join(',');
   const markersJS = points.map((p, i) => `
     L.circleMarker([${p.latitude}, ${p.longitude}], {
@@ -42,6 +43,25 @@ const getLeafletHTML = (points: Coordinate[]) => {
     }).addTo(map);
   ` : '';
 
+  // Ajouter le marqueur de position utilisateur si disponible
+  const userMarkerJS = userLocation ? `
+    L.marker([${userLocation.latitude}, ${userLocation.longitude}], {
+      icon: L.divIcon({
+        className: 'user-location-marker',
+        html: '📍',
+        iconSize: [20, 20]
+      })
+    }).addTo(map).bindPopup('Vous êtes ici');
+    
+    // Cercle de précision (10m)
+    L.circle([${userLocation.latitude}, ${userLocation.longitude}], {
+      color: '#2196F3',
+      fillColor: '#2196F3',
+      fillOpacity: 0.1,
+      radius: 10
+    }).addTo(map);
+  ` : '';
+
   return `
 <!DOCTYPE html>
 <html>
@@ -52,28 +72,32 @@ const getLeafletHTML = (points: Coordinate[]) => {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     #map { width: 100vw; height: 100vh; }
+    .user-location-marker {
+      font-size: 24px;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <script>
-    // Initialise la carte centrée sur le Cameroun
-    var map = L.map('map').setView([4.56, 12.56], 13);
+    // Initialise la carte centrée sur la position utilisateur ou défaut
+    var map = L.map('map').setView([${mapCenter.latitude}, ${mapCenter.longitude}], 17);
 
-    // Tuiles OpenStreetMap — gratuit, sans clé API
+    // Tuiles OpenStreetMap
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors',
       maxZoom: 19
     }).addTo(map);
 
     window.currentPolygon = null;
-    window.allMarkers = [];
 
-    // Affiche les points existants
+    // Affiche les marqueurs
     ${markersJS}
+    ${userMarkerJS}
     ${polygonJS}
 
-    // Gère le clic sur la carte → envoie les coordonnées à React Native
+    // Gère le clic sur la carte
     map.on('click', function(e) {
       window.ReactNativeWebView.postMessage(JSON.stringify({
         type: 'MAP_PRESS',
@@ -92,9 +116,42 @@ const MapScreen: React.FC<Props> = ({ navigation }) => {
   const [surface, setSurface] = useState('0.1');
   const [manualSurface, setManualSurface] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [userLocation, setUserLocation] = useState<Coordinate | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [mapCenter, setMapCenter] = useState<Coordinate>({
+    latitude: 4.5649999999999995,
+    longitude: 12.565000000000001
+  });
   const webViewRef = useRef<WebView>(null);
 
-  // Reçoit les messages de la WebView (clics sur la carte)
+  // Obtenir la position GPS au chargement
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setLocationError('Permission de localisation refusée');
+          return;
+        }
+
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High
+        });
+        
+        const userCoord = {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude
+        };
+        
+        setUserLocation(userCoord);
+        setMapCenter(userCoord); // Centrer la carte sur l'utilisateur
+        
+      } catch (error) {
+        setLocationError('Impossible d\'obtenir votre position');
+      }
+    })();
+  }, []);
+
   const handleWebViewMessage = (event: any) => {
     const data = JSON.parse(event.nativeEvent.data);
     if (data.type === 'MAP_PRESS') {
@@ -123,6 +180,13 @@ const MapScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
+  const centerOnUser = () => {
+    if (userLocation) {
+      setMapCenter(userLocation);
+      // Recharger la WebView avec le nouveau centre
+    }
+  };
+
   const saveParcelle = async () => {
     if (!nom) { Alert.alert('Erreur', 'Donnez un nom à la parcelle'); return; }
     if (points.length < 3) { Alert.alert('Erreur', 'Placez au moins 3 points'); return; }
@@ -147,16 +211,34 @@ const MapScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
+      {/* Barre d'outils pour la carte */}
+      <View style={styles.mapToolbar}>
+        {userLocation && (
+          <TouchableOpacity style={styles.toolbarButton} onPress={centerOnUser}>
+            <Text style={styles.toolbarButtonText}>📍 Me localiser</Text>
+          </TouchableOpacity>
+        )}
+        <Text style={styles.toolbarInfo}>
+          {points.length} point{points.length > 1 ? 's' : ''}
+        </Text>
+      </View>
 
-      {/* ✅ Carte OSM via WebView — se recharge quand les points changent */}
+      {/* Carte OSM via WebView */}
       <WebView
         ref={webViewRef}
         style={styles.map}
-        source={{ html: getLeafletHTML(points) }}
+        source={{ html: getLeafletHTML(points, userLocation, mapCenter) }}
         onMessage={handleWebViewMessage}
         javaScriptEnabled={true}
         originWhitelist={['*']}
       />
+
+      {/* Message si pas de GPS */}
+      {locationError && (
+        <View style={styles.locationError}>
+          <Text style={styles.locationErrorText}>{locationError}</Text>
+        </View>
+      )}
 
       <ScrollView style={styles.form} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>Nom de la parcelle</Text>
@@ -211,9 +293,41 @@ const MapScreen: React.FC<Props> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  map: { height: height * 0.55, width: '100%' },
-  form: { backgroundColor: '#fff', padding: 20, maxHeight: height * 0.45 },
+  container: { flex: 1, backgroundColor: '#fff' },
+  map: { height: height * 0.5, width: '100%' },
+  mapToolbar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 10,
+    backgroundColor: '#f5f5f5',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+  },
+  toolbarButton: {
+    backgroundColor: '#2E7D32',
+    padding: 8,
+    borderRadius: 5,
+  },
+  toolbarButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  toolbarInfo: {
+    fontSize: 14,
+    color: '#666',
+  },
+  locationError: {
+    backgroundColor: '#ffebee',
+    padding: 10,
+    alignItems: 'center',
+  },
+  locationErrorText: {
+    color: '#c62828',
+    fontSize: 14,
+  },
+  form: { backgroundColor: '#fff', padding: 20, maxHeight: height * 0.4 },
   label: { fontSize: 14, fontWeight: 'bold', color: '#333', marginBottom: 5 },
   input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 5, padding: 10, marginBottom: 15, fontSize: 16 },
   inputDisabled: { backgroundColor: '#f5f5f5', color: '#666' },
