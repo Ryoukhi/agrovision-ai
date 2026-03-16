@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,12 +10,23 @@ import {
   Dimensions,
   Share,
   Image,
+  Modal,
+  Pressable,
+  Platform,
+  ToastAndroid,
+  Animated,
 } from 'react-native';
+// @ts-ignore
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types';
 import { WebView } from 'react-native-webview';
+import { PinchGestureHandler, State } from 'react-native-gesture-handler';
 import api from '../api/client';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as MediaLibrary from 'expo-media-library';
+// @ts-ignore
+const base64Encode = require('base-64').encode;
 
 const { width } = Dimensions.get('window');
 
@@ -166,13 +177,20 @@ const mStyles = StyleSheet.create({
 // ─── COMPOSANT IMAGE SATELLITE ────────────────────────────────────────────────
 const ImageCard: React.FC<{
   title: string; subtitle: string;
-  uri?: string;
-}> = ({ title, subtitle, uri }) => {
+  uri?: string | null;
+  onPress?: () => void;
+  onDownload?: () => void;
+}> = ({ title, subtitle, uri, onPress, onDownload }) => {
   return (
     <View style={iStyles.card}>
-      <Text style={iStyles.title}>{title}</Text>
+      <View style={iStyles.cardHeader}>
+        <Text style={iStyles.title}>{title}</Text>
+        <TouchableOpacity onPress={onDownload} disabled={!uri} style={iStyles.downloadIcon}>
+          <Ionicons name="download-outline" size={18} color={uri ? '#1e88e5' : '#ccc'} />
+        </TouchableOpacity>
+      </View>
       <Text style={iStyles.subtitle}>{subtitle}</Text>
-      <View style={iStyles.frame}>
+      <Pressable onPress={onPress} disabled={!uri} style={iStyles.frame}>
         {uri ? (
           <Image source={{ uri }} style={iStyles.img} resizeMode="cover" />
         ) : (
@@ -181,19 +199,21 @@ const ImageCard: React.FC<{
             <Text style={iStyles.placeholderText}>En attente{'\n'}du serveur</Text>
           </View>
         )}
-      </View>
+      </Pressable>
     </View>
   );
 };
 
 const iStyles = StyleSheet.create({
   card:            { width: width * 0.62, marginRight: 14, backgroundColor: '#fff', borderRadius: 14, padding: 12, elevation: 3, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } },
+  cardHeader:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
   title:           { fontSize: 14, fontWeight: '700', color: '#222' },
   subtitle:        { fontSize: 11, color: '#888', marginBottom: 8 },
   frame:           { height: 160, borderRadius: 10, overflow: 'hidden', backgroundColor: '#f0f0f0' },
   img:             { width: '100%', height: '100%' },
   placeholder:     { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8 },
   placeholderText: { fontSize: 12, color: '#aaa', textAlign: 'center', lineHeight: 18 },
+  downloadIcon:    { padding: 4 },
 });
 
 // ─── ÉCRAN PRINCIPAL ──────────────────────────────────────────────────────────
@@ -202,6 +222,13 @@ const AnalyseDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const [sharing, setSharing] = useState(false);
   const [ndviImageUri, setNdviImageUri] = useState<string | null>(null);
   const [multiImageUri, setMultiImageUri] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<{uri:string; title:string; subtitle:string} | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [modalScale, setModalScale] = useState(1);
+  const [baseScale, setBaseScale] = useState(1);
+  const [pinchScale, setPinchScale] = useState(1);
+  const [isPinching, setIsPinching] = useState(false);
+  const scaleRef = useRef(1);
 
   useEffect(() => {
     const fetchImages = async () => {
@@ -211,7 +238,7 @@ const AnalyseDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           const ndviResponse = await api.get(`/analyses/${analyse.id}/image/ndvi`, {
             responseType: 'arraybuffer',
           });
-          const ndviBase64 = `data:image/png;base64,${btoa(String.fromCharCode(...new Uint8Array(ndviResponse.data)))}`;
+          const ndviBase64 = `data:image/png;base64,${arrayBufferToBase64(ndviResponse.data)}`;
           setNdviImageUri(ndviBase64);
         }
 
@@ -220,7 +247,7 @@ const AnalyseDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           const multiResponse = await api.get(`/analyses/${analyse.id}/image/multi`, {
             responseType: 'arraybuffer',
           });
-          const multiBase64 = `data:image/png;base64,${btoa(String.fromCharCode(...new Uint8Array(multiResponse.data)))}`;
+          const multiBase64 = `data:image/png;base64,${arrayBufferToBase64(multiResponse.data)}`;
           setMultiImageUri(multiBase64);
         }
       } catch (error) {
@@ -230,6 +257,71 @@ const AnalyseDetailScreen: React.FC<Props> = ({ navigation, route }) => {
 
     fetchImages();
   }, [analyse.id, analyse.image_ndvi_path, analyse.image_multi_path]);
+
+  const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    return base64Encode(binary);
+  };
+
+  const showToast = (message: string) => {
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(message, ToastAndroid.LONG);
+    } else {
+      Alert.alert('Info', message);
+    }
+  };
+
+  const getDownloadFilename = (title: string) => {
+    const safeTitle = title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    return `${safeTitle}_${analyse.id}_${Date.now()}.png`;
+  };
+
+  const downloadImage = async (uri: string | null | undefined, title: string) => {
+    if (!uri) {
+      Alert.alert('Image non disponible', 'Patientez le temps que l’image soit chargée.');
+      return;
+    }
+
+    const mediaPermission = await MediaLibrary.requestPermissionsAsync();
+    if (mediaPermission.status !== 'granted') {
+      Alert.alert('Permission requise', 'Autorisez l’accès à la galerie pour sauvegarder l’image.');
+      return;
+    }
+
+    try {
+      setDownloading(true);
+      const filename = getDownloadFilename(title);
+      const baseDir = (FileSystem as any).documentDirectory || (FileSystem as any).cacheDirectory || '';
+      const fileUri = `${baseDir}${filename}`;
+
+      if (uri.startsWith('data:image')) {
+        const base64Data = uri.split(',')[1] ?? '';
+        await FileSystem.writeAsStringAsync(fileUri, base64Data, { encoding: 'base64' as any });
+      } else {
+        const response = await FileSystem.downloadAsync(uri, fileUri);
+        console.log('downloadedUri', response.uri);
+      }
+
+      const asset = await MediaLibrary.createAssetAsync(fileUri);
+      await MediaLibrary.createAlbumAsync('AgroVision', asset, false).catch(() => null);
+
+      showToast(`Image enregistrée dans la galerie: ${filename}`);
+      setPreviewImage(null);
+      setModalScale(1);
+      scaleRef.current = 1;
+    } catch (e) {
+      console.error('Erreur téléchargement image', e);
+      Alert.alert('Échec du téléchargement', `Impossible de sauvegarder : ${e}`);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const risk          = getRisk(analyse.risque);
   const ndviDates     = analyse.ndvi_dates  || [];
@@ -420,10 +512,65 @@ A FAIRE : ${analyse.action_recommandee}`,
         </View>
         <Text style={styles.sectionSubtitle}>Glissez pour voir les différentes vues</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.imagesRow}>
-          <ImageCard title="NDVI"           subtitle="Santé générale de la végétation" uri={ndviImageUri} />
-          <ImageCard title="Multi-spectral" subtitle="Vue combinée des bandes"         uri={multiImageUri} />
+          <ImageCard
+            title="NDVI"
+            subtitle="Santé générale de la végétation"
+            uri={ndviImageUri}
+            onPress={() => ndviImageUri && setPreviewImage({ uri: ndviImageUri, title: 'NDVI', subtitle: 'Indice de santé des cultures' })}
+            onDownload={() => downloadImage(ndviImageUri, 'NDVI')}
+          />
+          <ImageCard
+            title="Multi-spectral"
+            subtitle="Vue combinée des bandes"
+            uri={multiImageUri}
+            onPress={() => multiImageUri && setPreviewImage({ uri: multiImageUri, title: 'Multi-spectral', subtitle: 'image multispectrale de la parcelle' })}
+            onDownload={() => downloadImage(multiImageUri, 'Multi-spectral')}
+          />
         </ScrollView>
       </View>
+
+      <Modal visible={Boolean(previewImage)} animationType="slide" transparent>
+        <View style={styles.modalBg}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{previewImage?.title}</Text>
+              <TouchableOpacity onPress={() => { setPreviewImage(null); setModalScale(1); setBaseScale(1); setPinchScale(1); }} style={styles.closeBtn}>
+                <Ionicons name="close" size={22} color="#222" />
+              </TouchableOpacity>
+            </View>
+            <PinchGestureHandler
+              onGestureEvent={({ nativeEvent }) => {
+                const nextScale = Math.max(1, Math.min(3, baseScale * nativeEvent.scale));
+                setPinchScale(nextScale);
+                setModalScale(nextScale);
+                setIsPinching(true);
+              }}
+              onHandlerStateChange={({ nativeEvent }) => {
+                if (nativeEvent.state === State.END || nativeEvent.state === State.CANCELLED) {
+                  setBaseScale(modalScale);
+                  setIsPinching(false);
+                }
+              }}
+            >
+              <Animated.View style={{ transform: [{ scale: modalScale }] }}>
+                <Image source={{ uri: previewImage?.uri ?? '' }} style={styles.modalImg} resizeMode="contain" />
+              </Animated.View>
+            </PinchGestureHandler>
+            <Text style={styles.modalSubtitle}>{previewImage?.subtitle}</Text>
+            <TouchableOpacity
+              style={styles.modalDownloadBtn}
+              onPress={() => downloadImage(previewImage?.uri, previewImage?.title ?? 'image')}
+              disabled={downloading || !previewImage?.uri}
+            >
+              {downloading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.modalDownloadText}>Télécharger l’image</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── ACTIONS ── */}
       <View style={styles.actionsRow}>
@@ -492,6 +639,21 @@ const styles = StyleSheet.create({
     elevation: 2, shadowColor: '#000', shadowOpacity: 0.06,
     shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
   },
+
+  modalBg: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', padding: 16,
+  },
+  modalCard: {
+    width: '100%', backgroundColor: '#fff', borderRadius: 14, padding: 16,
+    maxHeight: '90%',
+  },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  modalTitle:  { fontSize: 18, fontWeight: '800', color: '#222' },
+  modalImg:    { width: '100%', height: 280, borderRadius: 12, backgroundColor: '#000' },
+  modalSubtitle: { marginTop: 8, color: '#555', fontSize: 13, marginBottom: 12 },
+  modalDownloadBtn: { backgroundColor: '#1E88E5', borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingVertical: 10 },
+  modalDownloadText: { color: '#fff', fontWeight: '700' },
+  closeBtn: { padding: 6 },
 
   predCard:      { marginHorizontal: 16, marginBottom: 16, padding: 18, borderRadius: 16, borderWidth: 1.5 },
   predEvolution: { fontSize: 15, fontWeight: '600', marginBottom: 16, lineHeight: 22 },
