@@ -15,7 +15,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.yourapp.agrovision",
       "config": {
-        "googleMapsApiKey": "YOUR_IOS_API_KEY" 
+        "googleMapsApiKey": "YOUR_IOS_API_KEY"
       }
     },
     "android": {
@@ -25,7 +25,7 @@
       },
       "package": "com.yourapp.agrovision",
       "config": {
-        "googleMapsApiKey": "YOUR_ANDROID_API_KEY"   
+        "googleMapsApiKey": "YOUR_ANDROID_API_KEY"
       }
     },
     "web": {
@@ -37,7 +37,8 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow AgroVision AI to use your location to map your fields."
         }
-      ]
+      ],
+      "expo-sharing"
     ]
   }
 }

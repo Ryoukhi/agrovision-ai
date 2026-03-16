@@ -11,6 +11,7 @@ import RegisterScreen from './src/screens/RegisterScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import MapScreen from './src/screens/MapScreen';
 import ParcelleDetailScreen from './src/screens/ParcelleDetailScreen';
+import AnalyseDetailScreen from './src/screens/AnalyseDetailScreen'; // ← AJOUT IMPORTANT
 
 const Stack = createStackNavigator<RootStackParamList>();
 
@@ -39,7 +40,7 @@ function AppNavigator() {
             component={HomeScreen} 
             options={{ 
               title: 'Mes parcelles',
-              headerLeft: () => null // Empêche de revenir en arrière
+              headerLeft: () => null
             }}
           />
           <Stack.Screen 
@@ -50,13 +51,16 @@ function AppNavigator() {
               headerBackTitle: 'Retour'
             }}
           />
-          {
           <Stack.Screen 
             name="ParcelleDetail" 
             component={ParcelleDetailScreen} 
             options={{ title: 'Détail parcelle' }}
           />
-          }
+          <Stack.Screen 
+            name="AnalyseDetail" 
+            component={AnalyseDetailScreen} 
+            options={{ title: 'Détail analyse' }}
+          />
         </>
       ) : (
         // Écrans pour non connecté

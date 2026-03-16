@@ -146,6 +146,7 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [loadingAnalyseId, setLoadingAnalyseId] = useState<number | null>(null);
 
   const loadAnalyses = async () => {
     try {
@@ -168,8 +169,16 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     loadAnalyses();
   };
 
-  const handleAnalysePress = (analyse: Analyse) => {
-    navigation.navigate('AnalyseDetail', { analyse });
+  const handleAnalysePress = async (analyse: Analyse) => {
+    setLoadingAnalyseId(analyse.id);
+    try {
+      const response = await api.get(`/analyses/${analyse.id}`);
+      navigation.navigate('AnalyseDetail', { analyse: response.data });
+    } catch (error: any) {
+      Alert.alert('Erreur', error.response?.data?.error || 'Impossible de charger les détails de l’analyse');
+    } finally {
+      setLoadingAnalyseId(null);
+    }
   };
 
   const handleNewAnalyse = async () => {
@@ -273,11 +282,17 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
               </Text>
             ) : (
               analyses.map((analyse) => (
-                <AnalyseCard
-                  key={analyse.id}
-                  analyse={analyse}
-                  onPress={() => handleAnalysePress(analyse)}
-                />
+                <View key={analyse.id} style={styles.analyseContainer}>
+                  <AnalyseCard
+                    analyse={analyse}
+                    onPress={() => handleAnalysePress(analyse)}
+                  />
+                  {loadingAnalyseId === analyse.id && (
+                    <View style={styles.loadingAnalyseOverlay}>
+                      <ActivityIndicator size="small" color="#fff" />
+                    </View>
+                  )}
+                </View>
               ))
             )}
           </ScrollView>
@@ -427,6 +442,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#2E7D32',
     fontStyle: 'italic',
+  },
+  analyseContainer: {
+    position: 'relative',
+  },
+  loadingAnalyseOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
   },
   emptyText: {
     textAlign: 'center',
