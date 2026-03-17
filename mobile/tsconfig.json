@@ -1,7 +1,8 @@
 {
   "extends": "@tsconfig/react-native/tsconfig.json",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    "types": ["node"]
   },
   "include": [
     "declarations.d.ts",

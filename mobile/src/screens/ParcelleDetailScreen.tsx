@@ -34,6 +34,7 @@ const getMiniMapHTML = (parcelle: Parcelle) => {
   const latMax = Number(parcelle.lat_max);
   const lonMin = Number(parcelle.long_min);
   const lonMax = Number(parcelle.long_max);
+  
   const isValid = Number.isFinite(latMin) && Number.isFinite(latMax) && Number.isFinite(lonMin) && Number.isFinite(lonMax);
 
   if (!isValid) {
@@ -43,13 +44,12 @@ const getMiniMapHTML = (parcelle: Parcelle) => {
   const centerLat = (latMin + latMax) / 2;
   const centerLon = (lonMin + lonMax) / 2;
   const bounds = [[latMin, lonMin], [latMax, lonMax]];
-  const safeName = (parcelle.nom || 'Parcelle').replace(/'/g, "\\'");
 
   return `
 <!DOCTYPE html>
 <html>
 <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
@@ -60,15 +60,28 @@ const getMiniMapHTML = (parcelle: Parcelle) => {
 <body>
   <div id="map"></div>
   <script>
-    const map = L.map('map', {zoomControl: false}).setView([${centerLat}, ${centerLon}], 13);
+    // Initialisation sans vue fixe au départ
+    var map = L.map('map', {zoomControl: false});
+    
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    const bounds = ${JSON.stringify(bounds)};
-    L.rectangle(bounds, { color: '#2E7D32', weight: 2, fillColor: '#2E7D32', fillOpacity: 0.2 }).addTo(map);
-    map.fitBounds(bounds);
+    
+    var bounds = ${JSON.stringify(bounds)};
+    var rectangle = L.rectangle(bounds, { 
+        color: '#2E7D32', 
+        weight: 3, 
+        fillColor: '#2E7D32', 
+        fillOpacity: 0.2 
+    }).addTo(map);
+
+    // Forcer le focus sur les limites du rectangle avec un délai pour s'assurer que le container est prêt
+    setTimeout(function() {
+        map.fitBounds(bounds, { padding: [20, 20] });
+    }, 100);
   </script>
 </body>
 </html>`;
 };
+
 
 // --- COMPOSANT : Carte d'une analyse individuelle ---
 const AnalyseCard: React.FC<{ analyse: Analyse; onPress: () => void; loading: boolean }> = ({ analyse, onPress, loading }) => {
@@ -142,6 +155,7 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const [editNom, setEditNom] = useState(parcelle.nom);
   const [editCulture, setEditCulture] = useState(parcelle.culture || 'manioc');
   const [editPlantsPerHa, setEditPlantsPerHa] = useState(String(parcelle.plants_per_ha || 10000));
+  const mapKey = `map-${parcelle.lat_min}-${parcelle.long_min}-${parcelle.lat_max}-${parcelle.long_max}`;
 
   useEffect(() => {
     loadAnalyses();
@@ -515,7 +529,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   btnText: {
-    color: '#2E7D32',
+    color: '#ea5353',
     fontWeight: 'bold',
     fontSize: 13,
   },
