@@ -1,0 +1,19 @@
+{
+  "date_analyse": "2026-03-17T09:17:32.100513",
+  "date_image_satellite": "2026-01-12",
+  "taux_infection": 0.0,
+  "surface_infectee_ha": 0.0,
+  "plants_infectes": 0,
+  "temperature_moyenne": 24.0,
+  "humidite_moyenne": 73,
+  "vent_moyen": 1.3,
+  "risque": "FAIBLE",
+  "evolution_7j": 0.0,
+  "plants_infectes_7j": 0,
+  "action_recommandee": "Surveillance normale - Pas d'action urgente",
+  "zone_type": "mixed",
+  "zone_warning": "ZONE_NON_AGRICOLE_MIXED",
+  "zone_confidence": 0.55,
+  "image_ndvi_path": "E:\\EADL\\EADL\\PROJET TUTOR\u00c9\\agrovision-ai\\data\\outputs\\analyse_9_ndvi.png",
+  "image_multi_path": "E:\\EADL\\EADL\\PROJET TUTOR\u00c9\\agrovision-ai\\data\\outputs\\analyse_9_multi.png"
+}

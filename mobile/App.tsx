@@ -12,6 +12,7 @@ import HomeScreen from './src/screens/HomeScreen';
 import MapScreen from './src/screens/MapScreen';
 import ParcelleDetailScreen from './src/screens/ParcelleDetailScreen';
 import AnalyseDetailScreen from './src/screens/AnalyseDetailScreen'; // ← AJOUT IMPORTANT
+import EditParcelleMapScreen from './src/screens/EditParcelleMapScreen';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
@@ -60,6 +61,11 @@ function AppNavigator() {
             name="AnalyseDetail" 
             component={AnalyseDetailScreen} 
             options={{ title: 'Détail analyse' }}
+          />
+          <Stack.Screen
+            name="EditParcelleMap"
+            component={EditParcelleMapScreen}
+            options={{ title: 'Modifier coordonnées parcelle' }}
           />
         </>
       ) : (

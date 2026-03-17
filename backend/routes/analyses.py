@@ -35,9 +35,20 @@ def get_analyses_parcelle(parcelle_id):
     return jsonify([{
         'id': a.id,
         'date_analyse': a.date_analyse.isoformat(),
+        'date_image_satellite': a.date_image_satellite,
         'taux_infection': a.taux_infection,
+        'surface_infectee_ha': a.surface_infectee_ha,
+        'plants_infectes': a.plants_infectes,
+        'temperature_moyenne': a.temperature_moyenne,
+        'humidite_moyenne': a.humidite_moyenne,
+        'vent_moyen': a.vent_moyen,
         'risque': a.risque,
-        'action_recommandee': a.action_recommandee
+        'evolution_7j': a.evolution_7j,
+        'plants_infectes_7j': a.plants_infectes_7j,
+        'action_recommandee': a.action_recommandee,
+        'zone_type': a.zone_type,
+        'zone_warning': a.zone_warning,
+        'zone_confidence': a.zone_confidence,
     } for a in analyses]), 200
 
 @analyses_bp.route('/<int:analyse_id>', methods=['GET'])

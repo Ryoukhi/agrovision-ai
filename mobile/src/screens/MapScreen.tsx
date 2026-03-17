@@ -27,6 +27,12 @@ const calculateApproximateArea = (points: Coordinate[]): number => {
   return Math.round(area * (111000 * metersPerLon) / 10000 * 100) / 100;
 };
 
+const calculatePlantDensity = (spacingMeters: number): number => {
+  if (!spacingMeters || spacingMeters <= 0) return 10000;
+  const density = 10000 / (spacingMeters * spacingMeters);
+  return Math.max(1, Math.round(density));
+};
+
 // ✅ HTML amélioré avec géolocalisation
 const getLeafletHTML = (points: Coordinate[], userLocation: Coordinate | null, mapCenter: Coordinate) => {
   const polygonCoords = points.map(p => `[${p.latitude}, ${p.longitude}]`).join(',');
@@ -113,6 +119,8 @@ const getLeafletHTML = (points: Coordinate[], userLocation: Coordinate | null, m
 const MapScreen: React.FC<Props> = ({ navigation }) => {
   const [points, setPoints] = useState<Coordinate[]>([]);
   const [nom, setNom] = useState('');
+  const [culture, setCulture] = useState('manioc');
+  const [spacing, setSpacing] = useState('1');
   const [surface, setSurface] = useState('0.1');
   const [manualSurface, setManualSurface] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -189,17 +197,25 @@ const MapScreen: React.FC<Props> = ({ navigation }) => {
 
   const saveParcelle = async () => {
     if (!nom) { Alert.alert('Erreur', 'Donnez un nom à la parcelle'); return; }
+    if (!culture) { Alert.alert('Erreur', 'Donnez une culture'); return; }
+    const spacingValue = Number(spacing);
+    if (isNaN(spacingValue) || spacingValue <= 0) {
+      Alert.alert('Erreur', 'Indiquez une distance entre plantes valide');
+      return;
+    }
     if (points.length < 3) { Alert.alert('Erreur', 'Placez au moins 3 points'); return; }
     setSaving(true);
     const lats = points.map(p => p.latitude);
     const lngs = points.map(p => p.longitude);
+    const plantsPerHa = calculatePlantDensity(spacingValue);
     try {
       await api.post('/parcelles', {
         nom,
         long_min: Math.min(...lngs), lat_min: Math.min(...lats),
         long_max: Math.max(...lngs), lat_max: Math.max(...lats),
         surface_ha: parseFloat(surface) || 0.1,
-        culture: 'manioc', plants_per_ha: 10000,
+        culture,
+        plants_per_ha: plantsPerHa,
       });
       Alert.alert('Succès', 'Parcelle créée !', [{ text: 'OK', onPress: () => navigation.goBack() }]);
     } catch (error: any) {
@@ -248,6 +264,24 @@ const MapScreen: React.FC<Props> = ({ navigation }) => {
           onChangeText={setNom}
           placeholder="Ex: Champ Nord"
         />
+
+        <Text style={styles.label}>Culture</Text>
+        <TextInput
+          style={styles.input}
+          value={culture}
+          onChangeText={setCulture}
+          placeholder="Ex: Manioc, Maïs, Riz"
+        />
+
+        <Text style={styles.label}>Distance entre plantes (m)</Text>
+        <TextInput
+          style={styles.input}
+          value={spacing}
+          onChangeText={(t) => setSpacing(t)}
+          placeholder="1.0"
+          keyboardType="numeric"
+        />
+        <Text style={styles.info}>Densité calculée : {calculatePlantDensity(Number(spacing))} plants/ha</Text>
 
         <View style={styles.surfaceContainer}>
           <Text style={styles.label}>Surface (hectares)</Text>

@@ -52,4 +52,5 @@ export type RootStackParamList = {
   Map: undefined;
   ParcelleDetail: { parcelle: Parcelle };
   AnalyseDetail: { analyse: Analyse };
+  EditParcelleMap: { parcelle: Parcelle };
 };

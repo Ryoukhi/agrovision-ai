@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Dimensions,
+  TextInput,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList, Parcelle, Analyse } from '../types';
@@ -124,11 +125,11 @@ const AnalyseCard: React.FC<{ analyse: Analyse; onPress: () => void }> = ({ anal
           <Text style={styles.statLabel}>Infection</Text>
         </View>
         <View style={styles.stat}>
-          <Text style={styles.statValue}>{analyse.evolution_7j > 0 ? '+' : ''}{analyse.evolution_7j}%</Text>
+          <Text style={styles.statValue}>{Number.isFinite(Number(analyse.evolution_7j)) ? `${analyse.evolution_7j > 0 ? '+' : ''}${analyse.evolution_7j}%` : 'N/A'}</Text>
           <Text style={styles.statLabel}>Évolution 7j</Text>
         </View>
         <View style={styles.stat}>
-          <Text style={styles.statValue}>{analyse.plants_infectes}</Text>
+          <Text style={styles.statValue}>{Number.isFinite(Number(analyse.plants_infectes)) ? analyse.plants_infectes : 'N/A'}</Text>
           <Text style={styles.statLabel}>Plants</Text>
         </View>
       </View>
@@ -147,6 +148,10 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [loadingAnalyseId, setLoadingAnalyseId] = useState<number | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editNom, setEditNom] = useState(parcelle.nom);
+  const [editCulture, setEditCulture] = useState(parcelle.culture || 'manioc');
+  const [editPlantsPerHa, setEditPlantsPerHa] = useState(String(parcelle.plants_per_ha || 10000));
 
   const loadAnalyses = async () => {
     try {
@@ -179,6 +184,51 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     } finally {
       setLoadingAnalyseId(null);
     }
+  };
+
+  const saveParcelleChanges = async () => {
+    if (!editNom.trim()) { Alert.alert('Erreur', 'Le nom est requis'); return; }
+    if (!editCulture.trim()) { Alert.alert('Erreur', 'La culture est requise'); return; }
+    const plants = Number(editPlantsPerHa);
+    if (!Number.isFinite(plants) || plants <= 0) { Alert.alert('Erreur', 'Densité invalide'); return; }
+
+    try {
+      await api.put(`/parcelles/${parcelle.id}`, {
+        nom: editNom.trim(),
+        culture: editCulture.trim(),
+        plants_per_ha: plants,
+      });
+      Alert.alert('Succès', 'Parcelle mise à jour');
+      parcelle.nom = editNom.trim();
+      parcelle.culture = editCulture.trim();
+      parcelle.plants_per_ha = plants;
+      setEditing(false);
+    } catch (error: any) {
+      Alert.alert('Erreur', error.response?.data?.error || 'Impossible de modifier la parcelle');
+    }
+  };
+
+  const deleteParcelle = async () => {
+    Alert.alert(
+      'Confirmer suppression',
+      'Voulez-vous vraiment supprimer cette parcelle ?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.delete(`/parcelles/${parcelle.id}`);
+              Alert.alert('Supprimé', 'La parcelle a été supprimée.');
+              navigation.goBack();
+            } catch (error: any) {
+              Alert.alert('Erreur', error.response?.data?.error || 'Impossible de supprimer');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleNewAnalyse = async () => {
@@ -227,7 +277,7 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
 
       {/* Informations de la parcelle */}
       <View style={styles.infoCard}>
-        <Text style={styles.parcelleNom}>{parcelle.nom}</Text>
+        <Text style={styles.parcelleNom}>{editing ? 'Modifier la parcelle' : parcelle.nom}</Text>
         
         <View style={styles.infoGrid}>
           <View style={styles.infoItem}>
@@ -236,11 +286,29 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           </View>
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>Culture</Text>
-            <Text style={styles.infoValue}>{parcelle.culture || 'manioc'}</Text>
+            {editing ? (
+              <TextInput
+                style={styles.inputSmall}
+                value={editCulture}
+                onChangeText={setEditCulture}
+                placeholder="Culture"
+              />
+            ) : (
+              <Text style={styles.infoValue}>{parcelle.culture || 'manioc'}</Text>
+            )}
           </View>
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>Densité</Text>
-            <Text style={styles.infoValue}>{parcelle.plants_per_ha || 10000}/ha</Text>
+            {editing ? (
+              <TextInput
+                style={styles.inputSmall}
+                value={editPlantsPerHa}
+                onChangeText={setEditPlantsPerHa}
+                keyboardType="numeric"
+              />
+            ) : (
+              <Text style={styles.infoValue}>{parcelle.plants_per_ha !== undefined ? parcelle.plants_per_ha : 10000}/ha</Text>
+            )}
           </View>
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>Créée le</Text>
@@ -248,6 +316,31 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
               {new Date(parcelle.created_at).toLocaleDateString()}
             </Text>
           </View>
+        </View>
+
+        <View style={styles.parcelleActions}>
+          {editing ? (
+            <>
+              <TouchableOpacity style={styles.saveButtonSmall} onPress={saveParcelleChanges}>
+                <Text style={styles.saveButtonText}>Enregistrer</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.cancelButtonSmall} onPress={() => setEditing(false)}>
+                <Text style={styles.cancelButtonText}>Annuler</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity style={styles.editButton} onPress={() => setEditing(true)}>
+                <Text style={styles.editButtonText}>Modifier infos</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.editButton} onPress={() => navigation.navigate('EditParcelleMap', { parcelle })}>
+                <Text style={styles.editButtonText}>Modifier coords</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.deleteButton} onPress={deleteParcelle}>
+                <Text style={styles.deleteButtonText}>Supprimer</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </View>
 
@@ -347,6 +440,68 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#333',
+  },
+  inputSmall: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 6,
+    padding: 8,
+    fontSize: 14,
+    backgroundColor: '#fff',
+  },
+  parcelleActions: {
+    marginTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  editButton: {
+    backgroundColor: '#1976d2',
+    borderRadius: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginRight: 5,
+  },
+  editButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  deleteButton: {
+    backgroundColor: '#d32f2f',
+    borderRadius: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginRight: 5,
+  },
+  deleteButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  saveButtonSmall: {
+    backgroundColor: '#2E7D32',
+    borderRadius: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginRight: 5,
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  cancelButtonSmall: {
+    backgroundColor: '#757575',
+    borderRadius: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  cancelButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
   },
   analysesSection: {
     flex: 1,
