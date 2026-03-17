@@ -2,5 +2,10 @@
   "extends": "@tsconfig/react-native/tsconfig.json",
   "compilerOptions": {
     "strict": true
-  }
+  },
+  "include": [
+    "declarations.d.ts",
+    "src/**/*",
+    "App.tsx"
+  ]
 }

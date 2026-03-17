@@ -7,13 +7,16 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  StatusBar,
+  SafeAreaView,
 } from 'react-native';
+// Importation de l'icône
+import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import { Parcelle, RootStackParamList } from '../types';
 import { StackNavigationProp } from '@react-navigation/stack';
 
-// Type pour la navigation
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
 
 interface Props {
@@ -27,8 +30,6 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
 
   useEffect(() => {
     loadParcelles();
-    
-    // Recharger quand on revient sur l'écran
     const unsubscribe = navigation.addListener('focus', loadParcelles);
     return unsubscribe;
   }, [navigation]);
@@ -36,14 +37,7 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const loadParcelles = async () => {
     try {
       const response = await api.get<Parcelle[]>('/parcelles');
-      const mapped = response.data.map((p: any) => ({
-        ...p,
-        lat_min: Number(p.lat_min ?? p.coords?.lat_min),
-        lat_max: Number(p.lat_max ?? p.coords?.lat_max),
-        long_min: Number(p.long_min ?? p.coords?.long_min),
-        long_max: Number(p.long_max ?? p.coords?.long_max),
-      }));
-      setParcelles(mapped);
+      setParcelles(response.data);
     } catch (error) {
       Alert.alert('Erreur', 'Impossible de charger les parcelles');
     } finally {
@@ -52,220 +46,339 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Déconnexion',
-      'Êtes-vous sûr de vouloir vous déconnecter ?',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        { 
-          text: 'Déconnexion', 
-          onPress: async () => {
-            await logout();
-          },
-          style: 'destructive',
-        },
-      ]
-    );
+    Alert.alert('Déconnexion', 'Voulez-vous vous déconnecter ?', [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Quitter', onPress: async () => await logout(), style: 'destructive' },
+    ]);
   };
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2E7D32" />
+        <Text style={styles.loadingText}>Chargement de vos terres...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      {/* En-tête */}
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      
+      {/* 1️⃣ EN-TÊTE PREMIUM */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.welcome}>Bienvenue,</Text>
-          <Text style={styles.userName}>{user?.username}</Text>
+        <View style={styles.headerLeft}>
+          <View style={styles.avatarBox}>
+            <Text style={styles.avatarText}>{user?.username?.charAt(0).toUpperCase()}</Text>
+          </View>
+          <View>
+            <Text style={styles.welcomeText}>Bonjour 👋</Text>
+            <Text style={styles.userNameText}>{user?.username}</Text>
+          </View>
         </View>
-        <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-          <Text style={styles.logoutText}>🚪</Text>
+        <TouchableOpacity onPress={handleLogout} style={styles.iconButton}>
+          <Icon name="logout-variant" size={24} color="#E53935" />
         </TouchableOpacity>
       </View>
 
-      {/* Statistiques */}
-      <View style={styles.statsCard}>
-        <Text style={styles.statsNumber}>{parcelles.length}</Text>
-        <Text style={styles.statsLabel}>parcelle(s) enregistrée(s)</Text>
-      </View>
-
-      {/* Liste des parcelles */}
-      <Text style={styles.sectionTitle}>Mes parcelles</Text>
-      
       <FlatList
         data={parcelles}
         keyExtractor={(item) => item.id.toString()}
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={
+          <>
+            {/* 2️⃣ CARTE DE RÉSUMÉ (STATISTIQUES) */}
+            <View style={styles.summaryCard}>
+              <View style={styles.summaryInfo}>
+                <Text style={styles.summaryNumber}>{parcelles.length}</Text>
+                <Text style={styles.summaryLabel}>Parcelles actives</Text>
+              </View>
+              <View style={styles.summaryIconCircle}>
+                <Icon name="map-marker-path" size={32} color="#fff" />
+              </View>
+            </View>
+
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Mes exploitations</Text>
+              <Icon name="leaf" size={20} color="#2E7D32" />
+            </View>
+          </>
+        }
         renderItem={({ item }) => (
           <TouchableOpacity
+            activeOpacity={0.8}
             style={styles.parcelleCard}
             onPress={() => navigation.navigate('ParcelleDetail', { parcelle: item })}>
-            <View style={styles.parcelleHeader}>
-              <Text style={styles.parcelleNom}>{item.nom}</Text>
-              <Text style={styles.parcelleSurface}>{item.surface_ha} ha</Text>
+            
+            <View style={styles.cardTop}>
+              <View style={styles.titleContainer}>
+                <Icon name="land-plots" size={20} color="#2E7D32" style={{marginRight: 8}} />
+                <Text style={styles.parcelleName}>{item.nom}</Text>
+              </View>
+              <View style={styles.surfaceBadge}>
+                <Text style={styles.surfaceText}>{item.surface_ha} ha</Text>
+              </View>
             </View>
-            <Text style={styles.parcelleCulture}>🌱 {item.culture || 'manioc'}</Text>
-            <Text style={styles.parcelleDate}>
-              Créée le {new Date(item.created_at).toLocaleDateString()}
-            </Text>
+
+            <View style={styles.cardDetails}>
+              <View style={styles.detailItem}>
+                <Icon name="sprout" size={16} color="#757575" />
+                <Text style={styles.detailText}>Culture: <Text style={styles.boldText}>{item.culture || 'Manioc'}</Text></Text>
+              </View>
+              <View style={styles.detailItem}>
+                <Icon name="calendar-clock" size={16} color="#757575" />
+                <Text style={styles.detailText}>
+                  Depuis le {new Date(item.created_at).toLocaleDateString()}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.cardFooter}>
+                <Text style={styles.actionLink}>Consulter le diagnostic</Text>
+                <Icon name="chevron-right" size={20} color="#2E7D32" />
+            </View>
           </TouchableOpacity>
         )}
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>Aucune parcelle pour le moment</Text>
-            <Text style={styles.emptySubText}>Appuyez sur + pour en ajouter une</Text>
+          <View style={styles.emptyState}>
+            <Icon name="image-filter-hdr" size={80} color="#E0E0E0" />
+            <Text style={styles.emptyTitle}>Aucune terre ici</Text>
+            <Text style={styles.emptyDesc}>Ajoutez votre première parcelle pour commencer l'analyse.</Text>
           </View>
         }
       />
 
-      {/* Bouton flottant d'ajout - NAVIGUE VERS MAPSCREEN */}
+      {/* 3️⃣ BOUTON D'ACTION FLOTTANT (FAB) */}
       <TouchableOpacity
-        style={styles.addButton}
+        style={styles.fab}
         onPress={() => navigation.navigate('Map')}>
-        <Text style={styles.addButtonText}>+</Text>
+        <Icon name="plus" size={30} color="#fff" />
+        <Text style={styles.fabText}>Nouveau</Text>
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#FBFBFB',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  loadingText: {
+    marginTop: 10,
+    color: '#2E7D32',
+    fontWeight: '600',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 15,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: '#F0F0F0',
   },
-  welcome: {
-    fontSize: 14,
-    color: '#666',
-  },
-  userName: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2E7D32',
-  },
-  logoutButton: {
-    padding: 10,
-  },
-  logoutText: {
-    fontSize: 24,
-  },
-  statsCard: {
-    backgroundColor: '#fff',
-    margin: 20,
-    padding: 20,
-    borderRadius: 15,
+  headerLeft: {
+    flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
-  statsNumber: {
-    fontSize: 36,
+  avatarBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#E8F5E9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
+  },
+  avatarText: {
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#2E7D32',
   },
-  statsLabel: {
+  welcomeText: {
+    fontSize: 12,
+    color: '#9E9E9E',
+  },
+  userNameText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1B5E20',
+  },
+  iconButton: {
+    padding: 8,
+    borderRadius: 12,
+    backgroundColor: '#FFF5F5',
+  },
+  listContent: {
+    paddingBottom: 100,
+  },
+  summaryCard: {
+    margin: 20,
+    padding: 24,
+    backgroundColor: '#2E7D32',
+    borderRadius: 28,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#1B5E20',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  summaryInfo: {
+    flex: 1,
+  },
+  summaryNumber: {
+    fontSize: 34,
+    fontWeight: '900',
+    color: '#fff',
+  },
+  summaryLabel: {
     fontSize: 14,
-    color: '#666',
+    color: '#C8E6C9',
+    fontWeight: '500',
+  },
+  summaryIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 22,
+    marginBottom: 10,
     marginTop: 5,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginLeft: 20,
-    marginBottom: 10,
+    fontSize: 19,
+    fontWeight: '800',
     color: '#333',
+    marginRight: 8,
   },
   parcelleCard: {
     backgroundColor: '#fff',
     marginHorizontal: 20,
     marginVertical: 8,
-    padding: 15,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    padding: 16,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
     elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
   },
-  parcelleHeader: {
+  cardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  parcelleNom: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+  titleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  parcelleSurface: {
-    fontSize: 14,
+  parcelleName: {
+    fontSize: 17,
+    fontWeight: 'bold',
+    color: '#263238',
+  },
+  surfaceBadge: {
+    backgroundColor: '#F1F8E9',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  surfaceText: {
+    fontSize: 13,
+    fontWeight: 'bold',
     color: '#2E7D32',
-    fontWeight: '500',
   },
-  parcelleCulture: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 5,
+  cardDetails: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+    paddingBottom: 12,
+    marginBottom: 10,
   },
-  parcelleDate: {
-    fontSize: 12,
-    color: '#999',
-  },
-  emptyContainer: {
+  detailItem: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 50,
+    marginBottom: 6,
   },
-  emptyText: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 5,
-  },
-  emptySubText: {
+  detailText: {
     fontSize: 14,
-    color: '#999',
+    color: '#616161',
+    marginLeft: 8,
   },
-  addButton: {
+  boldText: {
+    fontWeight: 'bold',
+    color: '#424242',
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  actionLink: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2E7D32',
+  },
+  emptyState: {
+    alignItems: 'center',
+    marginTop: 60,
+    paddingHorizontal: 40,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#424242',
+    marginTop: 15,
+  },
+  emptyDesc: {
+    fontSize: 14,
+    color: '#9E9E9E',
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  fab: {
     position: 'absolute',
+    bottom: 25,
     right: 20,
-    bottom: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
     backgroundColor: '#2E7D32',
-    justifyContent: 'center',
+    flexDirection: 'row',
     alignItems: 'center',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 30,
+    elevation: 6,
+    shadowColor: '#1B5E20',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 5,
   },
-  addButtonText: {
-    fontSize: 32,
+  fabText: {
     color: '#fff',
-    marginTop: -2,
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginLeft: 8,
   },
 });
 
