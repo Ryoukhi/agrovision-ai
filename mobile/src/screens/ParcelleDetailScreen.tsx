@@ -10,11 +10,14 @@ import {
   RefreshControl,
   Dimensions,
   TextInput,
+  SafeAreaView,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList, Parcelle, Analyse } from '../types';
 import api from '../api/client';
 import { WebView } from 'react-native-webview';
+// Importation des icônes vectorielles
+import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 
 const { height } = Dimensions.get('window');
 
@@ -25,7 +28,7 @@ interface Props {
   route: any;
 }
 
-// Génère la carte miniature pour afficher la parcelle
+// --- FONCTION : Génère la carte miniature Leaflet ---
 const getMiniMapHTML = (parcelle: Parcelle) => {
   const latMin = Number(parcelle.lat_min);
   const latMax = Number(parcelle.lat_max);
@@ -34,19 +37,13 @@ const getMiniMapHTML = (parcelle: Parcelle) => {
   const isValid = Number.isFinite(latMin) && Number.isFinite(latMax) && Number.isFinite(lonMin) && Number.isFinite(lonMax);
 
   if (!isValid) {
-    return `
-<!DOCTYPE html>
-<html><body><div style="padding:20px;font-family:sans-serif;color:#f00;">Coordonnées invalides pour la parcelle.</div></body></html>`;
+    return `<html><body style="display:flex;justify-content:center;align-items:center;height:100vh;color:red;font-family:sans-serif;">Coordonnées invalides</body></html>`;
   }
 
   const centerLat = (latMin + latMax) / 2;
   const centerLon = (lonMin + lonMax) / 2;
-  const bounds = [
-    [latMin, lonMin],
-    [latMax, lonMax]
-  ];
-  const boundsJson = JSON.stringify(bounds);
-  const safeName = (parcelle.nom || 'Parcelle').replace(/'/g, "\\'").replace(/\n/g, ' ');
+  const bounds = [[latMin, lonMin], [latMax, lonMax]];
+  const safeName = (parcelle.nom || 'Parcelle').replace(/'/g, "\\'");
 
   return `
 <!DOCTYPE html>
@@ -57,90 +54,81 @@ const getMiniMapHTML = (parcelle: Parcelle) => {
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body, #map { width: 100%; height: 100%; }
+    html, body, #map { width: 100%; height: 100%; background: #f0f0f0; }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <script>
-    try {
-      const map = L.map('map').setView([${centerLat}, ${centerLon}], 13);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
-        maxZoom: 19
-      }).addTo(map);
-
-      const bounds = ${boundsJson};
-      L.rectangle(bounds, {
-        color: '#2E7D32',
-        weight: 3,
-        fillColor: '#4CAF50',
-        fillOpacity: 0.2
-      }).addTo(map).bindPopup('${safeName}');
-
-      L.marker([${centerLat}, ${centerLon}]).addTo(map).bindPopup('${safeName}');
-      map.fitBounds(bounds);
-      console.log('Leaflet OK', {center: [${centerLat}, ${centerLon}], bounds});
-    } catch (e) {
-      console.error('MiniMap JavaScript error', e);
-      document.body.innerHTML = '<div style="color:red;padding:20px;font-family:sans-serif;">Erreur Leaflet: ' + e.message + '</div>';
-    }
+    const map = L.map('map', {zoomControl: false}).setView([${centerLat}, ${centerLon}], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const bounds = ${JSON.stringify(bounds)};
+    L.rectangle(bounds, { color: '#2E7D32', weight: 2, fillColor: '#2E7D32', fillOpacity: 0.2 }).addTo(map);
+    map.fitBounds(bounds);
   </script>
 </body>
 </html>`;
 };
 
-// Composant pour afficher une analyse dans la liste
-const AnalyseCard: React.FC<{ analyse: Analyse; onPress: () => void }> = ({ analyse, onPress }) => {
-  const getRiskColor = (risque: string) => {
+// --- COMPOSANT : Carte d'une analyse individuelle ---
+const AnalyseCard: React.FC<{ analyse: Analyse; onPress: () => void; loading: boolean }> = ({ analyse, onPress, loading }) => {
+  const getRiskDetails = (risque: string) => {
     switch (risque) {
-      case 'FAIBLE': return '#4CAF50';
-      case 'MODÉRÉ': return '#FF9800';
-      case 'ÉLEVÉ': return '#f44336';
-      case 'CRITIQUE': return '#9C27B0';
-      default: return '#999';
+      case 'FAIBLE': return { color: '#4CAF50', icon: 'check-circle', label: 'Sain' };
+      case 'MODÉRÉ': return { color: '#FF9800', icon: 'alert-circle', label: 'Alerte' };
+      case 'ÉLEVÉ': return { color: '#F44336', icon: 'alert-octagon', label: 'Danger' };
+      case 'CRITIQUE': return { color: '#9C27B0', icon: 'skull', label: 'Critique' };
+      default: return { color: '#999', icon: 'help-circle', label: risque };
     }
   };
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('fr-FR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
-  };
+  const risk = getRiskDetails(analyse.risque);
 
   return (
-    <TouchableOpacity style={styles.analyseCard} onPress={onPress}>
+    <TouchableOpacity style={styles.analyseCard} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.analyseHeader}>
-        <Text style={styles.analyseDate}>{formatDate(analyse.date_analyse)}</Text>
-        <View style={[styles.riskBadge, { backgroundColor: getRiskColor(analyse.risque) }]}>
-          <Text style={styles.riskText}>{analyse.risque}</Text>
+        <View style={styles.dateRow}>
+          <Icon name="calendar-clock" size={16} color="#666" />
+          <Text style={styles.analyseDate}>{new Date(analyse.date_analyse).toLocaleDateString()}</Text>
+        </View>
+        <View style={[styles.riskBadge, { backgroundColor: risk.color + '15', borderColor: risk.color }]}>
+          <Icon name={risk.icon as any} size={14} color={risk.color} />
+          <Text style={[styles.riskText, { color: risk.color }]}>{risk.label}</Text>
         </View>
       </View>
       
       <View style={styles.analyseStats}>
-        <View style={styles.stat}>
+        <View style={styles.statBox}>
           <Text style={styles.statValue}>{analyse.taux_infection}%</Text>
           <Text style={styles.statLabel}>Infection</Text>
         </View>
-        <View style={styles.stat}>
-          <Text style={styles.statValue}>{Number.isFinite(Number(analyse.evolution_7j)) ? `${analyse.evolution_7j > 0 ? '+' : ''}${analyse.evolution_7j}%` : 'N/A'}</Text>
-          <Text style={styles.statLabel}>Évolution 7j</Text>
+        <View style={styles.statBox}>
+          <Text style={[styles.statValue, { color: analyse.evolution_7j > 0 ? '#F44336' : '#4CAF50' }]}>
+            {analyse.evolution_7j > 0 ? '↑' : '↓'}{Math.abs(analyse.evolution_7j)}%
+          </Text>
+          <Text style={styles.statLabel}>Évol. 7j</Text>
         </View>
-        <View style={styles.stat}>
-          <Text style={styles.statValue}>{Number.isFinite(Number(analyse.plants_infectes)) ? analyse.plants_infectes : 'N/A'}</Text>
+        <View style={styles.statBox}>
+          <Text style={styles.statValue}>{analyse.plants_infectes || '0'}</Text>
           <Text style={styles.statLabel}>Plants</Text>
         </View>
       </View>
 
-      <Text style={styles.analyseAction} numberOfLines={1}>
-        {analyse.action_recommandee}
-      </Text>
+      <View style={styles.actionRow}>
+        <Icon name="lightbulb-on" size={16} color="#2E7D32" />
+        <Text style={styles.analyseAction} numberOfLines={1}>{analyse.action_recommandee}</Text>
+      </View>
+
+      {loading && (
+        <View style={styles.cardLoaderOverlay}>
+          <ActivityIndicator color="#fff" />
+        </View>
+      )}
     </TouchableOpacity>
   );
 };
 
+// --- COMPOSANT PRINCIPAL ---
 const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const { parcelle } = route.params;
   const [analyses, setAnalyses] = useState<Analyse[]>([]);
@@ -148,10 +136,16 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [loadingAnalyseId, setLoadingAnalyseId] = useState<number | null>(null);
+  
+  // États pour l'édition
   const [editing, setEditing] = useState(false);
   const [editNom, setEditNom] = useState(parcelle.nom);
   const [editCulture, setEditCulture] = useState(parcelle.culture || 'manioc');
   const [editPlantsPerHa, setEditPlantsPerHa] = useState(String(parcelle.plants_per_ha || 10000));
+
+  useEffect(() => {
+    loadAnalyses();
+  }, []);
 
   const loadAnalyses = async () => {
     try {
@@ -165,10 +159,6 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     }
   };
 
-  useEffect(() => {
-    loadAnalyses();
-  }, []);
-
   const onRefresh = () => {
     setRefreshing(true);
     loadAnalyses();
@@ -180,17 +170,22 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
       const response = await api.get(`/analyses/${analyse.id}`);
       navigation.navigate('AnalyseDetail', { analyse: response.data });
     } catch (error: any) {
-      Alert.alert('Erreur', error.response?.data?.error || 'Impossible de charger les détails de l’analyse');
+      Alert.alert('Erreur', error.response?.data?.error || 'Impossible de charger l’analyse');
     } finally {
       setLoadingAnalyseId(null);
     }
   };
 
   const saveParcelleChanges = async () => {
-    if (!editNom.trim()) { Alert.alert('Erreur', 'Le nom est requis'); return; }
-    if (!editCulture.trim()) { Alert.alert('Erreur', 'La culture est requise'); return; }
+    if (!editNom.trim() || !editCulture.trim()) {
+      Alert.alert('Erreur', 'Veuillez remplir tous les champs');
+      return;
+    }
     const plants = Number(editPlantsPerHa);
-    if (!Number.isFinite(plants) || plants <= 0) { Alert.alert('Erreur', 'Densité invalide'); return; }
+    if (!Number.isFinite(plants) || plants <= 0) {
+      Alert.alert('Erreur', 'Densité de plants invalide');
+      return;
+    }
 
     try {
       await api.put(`/parcelles/${parcelle.id}`, {
@@ -198,20 +193,20 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         culture: editCulture.trim(),
         plants_per_ha: plants,
       });
-      Alert.alert('Succès', 'Parcelle mise à jour');
+      Alert.alert('Succès', 'Informations mises à jour');
       parcelle.nom = editNom.trim();
       parcelle.culture = editCulture.trim();
       parcelle.plants_per_ha = plants;
       setEditing(false);
     } catch (error: any) {
-      Alert.alert('Erreur', error.response?.data?.error || 'Impossible de modifier la parcelle');
+      Alert.alert('Erreur', error.response?.data?.error || 'Échec de la mise à jour');
     }
   };
 
   const deleteParcelle = async () => {
     Alert.alert(
-      'Confirmer suppression',
-      'Voulez-vous vraiment supprimer cette parcelle ?',
+      'Suppression',
+      'Supprimer définitivement cette parcelle et ses analyses ?',
       [
         { text: 'Annuler', style: 'cancel' },
         {
@@ -220,10 +215,9 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           onPress: async () => {
             try {
               await api.delete(`/parcelles/${parcelle.id}`);
-              Alert.alert('Supprimé', 'La parcelle a été supprimée.');
               navigation.goBack();
             } catch (error: any) {
-              Alert.alert('Erreur', error.response?.data?.error || 'Impossible de supprimer');
+              Alert.alert('Erreur', 'Impossible de supprimer la parcelle');
             }
           }
         }
@@ -234,19 +228,19 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const handleNewAnalyse = async () => {
     Alert.alert(
       'Nouvelle analyse',
-      'Lancer une analyse satellite pour cette parcelle ?',
+      'Lancer une nouvelle analyse satellite ?',
       [
-        { text: 'Annuler', style: 'cancel' },
+        { text: 'Plus tard', style: 'cancel' },
         {
           text: 'Lancer',
           onPress: async () => {
             setAnalyzing(true);
             try {
-              const response = await api.post(`/analyses/parcelle/${parcelle.id}/run`);
-              Alert.alert('Succès', 'Analyse lancée ! Elle sera disponible dans quelques instants.');
-              loadAnalyses(); // Recharger la liste
+              await api.post(`/analyses/parcelle/${parcelle.id}/run`);
+              Alert.alert('Succès', 'Analyse en cours. Elle apparaîtra bientôt dans la liste.');
+              loadAnalyses();
             } catch (error: any) {
-              Alert.alert('Erreur', error.response?.data?.error || 'Erreur lors du lancement');
+              Alert.alert('Erreur', 'Échec du lancement de l’analyse');
             } finally {
               setAnalyzing(false);
             }
@@ -256,265 +250,281 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     );
   };
 
+  // --- FIN DE LA LOGIQUE ---
   return (
-    <View style={styles.container}>
-      {/* Mini-carte */}
-      <View style={styles.mapContainer}>
-        <WebView
-          style={styles.map}
-          source={{ html: getMiniMapHTML(parcelle) }}
-          javaScriptEnabled={true}
-          originWhitelist={['*']}
-          scrollEnabled={false}
-          onError={(syntheticEvent) => {
-            console.log('WebView error', syntheticEvent.nativeEvent);
-          }}
-          onLoadEnd={() => {
-            console.log('WebView loaded mini-map');
-          }}
-        />
-      </View>
-
-      {/* Informations de la parcelle */}
-      <View style={styles.infoCard}>
-        <Text style={styles.parcelleNom}>{editing ? 'Modifier la parcelle' : parcelle.nom}</Text>
-        
-        <View style={styles.infoGrid}>
-          <View style={styles.infoItem}>
-            <Text style={styles.infoLabel}>Surface</Text>
-            <Text style={styles.infoValue}>{parcelle.surface_ha} ha</Text>
-          </View>
-          <View style={styles.infoItem}>
-            <Text style={styles.infoLabel}>Culture</Text>
-            {editing ? (
-              <TextInput
-                style={styles.inputSmall}
-                value={editCulture}
-                onChangeText={setEditCulture}
-                placeholder="Culture"
-              />
-            ) : (
-              <Text style={styles.infoValue}>{parcelle.culture || 'manioc'}</Text>
-            )}
-          </View>
-          <View style={styles.infoItem}>
-            <Text style={styles.infoLabel}>Densité</Text>
-            {editing ? (
-              <TextInput
-                style={styles.inputSmall}
-                value={editPlantsPerHa}
-                onChangeText={setEditPlantsPerHa}
-                keyboardType="numeric"
-              />
-            ) : (
-              <Text style={styles.infoValue}>{parcelle.plants_per_ha !== undefined ? parcelle.plants_per_ha : 10000}/ha</Text>
-            )}
-          </View>
-          <View style={styles.infoItem}>
-            <Text style={styles.infoLabel}>Créée le</Text>
-            <Text style={styles.infoValue}>
-              {new Date(parcelle.created_at).toLocaleDateString()}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.parcelleActions}>
-          {editing ? (
-            <>
-              <TouchableOpacity style={styles.saveButtonSmall} onPress={saveParcelleChanges}>
-                <Text style={styles.saveButtonText}>Enregistrer</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.cancelButtonSmall} onPress={() => setEditing(false)}>
-                <Text style={styles.cancelButtonText}>Annuler</Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <TouchableOpacity style={styles.editButton} onPress={() => setEditing(true)}>
-                <Text style={styles.editButtonText}>Modifier infos</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.editButton} onPress={() => navigation.navigate('EditParcelleMap', { parcelle })}>
-                <Text style={styles.editButtonText}>Modifier coords</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.deleteButton} onPress={deleteParcelle}>
-                <Text style={styles.deleteButtonText}>Supprimer</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      </View>
-
-      {/* Section des analyses */}
-      <View style={styles.analysesSection}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Analyses</Text>
-          <TouchableOpacity
-            style={[styles.analyzeButton, analyzing && styles.buttonDisabled]}
-            onPress={handleNewAnalyse}
-            disabled={analyzing}>
-            {analyzing ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={styles.analyzeButtonText}>+ Nouvelle analyse</Text>
-            )}
+    <SafeAreaView style={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        {/* 1️⃣ MINI-CARTE INTERACTIVE */}
+        <View style={styles.mapContainer}>
+          <WebView
+            style={styles.map}
+            source={{ html: getMiniMapHTML(parcelle) }}
+            javaScriptEnabled={true}
+            scrollEnabled={false}
+          />
+          <TouchableOpacity 
+            style={styles.expandMapBtn}
+            onPress={() => navigation.navigate('EditParcelleMap', { parcelle })}
+          >
+            <Icon name="arrow-expand-all" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
 
-        {loading ? (
-          <ActivityIndicator size="large" color="#2E7D32" style={styles.loader} />
-        ) : (
-          <ScrollView
-            style={styles.analysesList}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-            }>
-            {analyses.length === 0 ? (
-              <Text style={styles.emptyText}>
-                Aucune analyse pour le moment.{'\n'}
-                Lancez votre première analyse !
+        {/* 2️⃣ CARTE D'INFORMATIONS DE LA PARCELLE */}
+        <View style={styles.infoCard}>
+          <View style={styles.cardHeader}>
+            <View style={styles.titleRow}>
+              <Icon name="sprout" size={24} color="#2E7D32" />
+              <Text style={styles.parcelleNom}>
+                {editing ? 'Modifier la parcelle' : parcelle.nom}
               </Text>
-            ) : (
-              analyses.map((analyse) => (
-                <View key={analyse.id} style={styles.analyseContainer}>
+            </View>
+            <TouchableOpacity onPress={() => setEditing(!editing)}>
+              <Icon 
+                name={editing ? "close-circle" : "pencil-circle"} 
+                size={30} 
+                color={editing ? "#757575" : "#2E7D32"} 
+              />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.infoGrid}>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>📐 Surface</Text>
+              <Text style={styles.infoValue}>{parcelle.surface_ha} ha</Text>
+            </View>
+            
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>🌿 Culture</Text>
+              {editing ? (
+                <TextInput
+                  style={styles.inputSmall}
+                  value={editCulture}
+                  onChangeText={setEditCulture}
+                />
+              ) : (
+                <Text style={styles.infoValue}>{parcelle.culture || 'Manioc'}</Text>
+              )}
+            </View>
+
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>🚜 Densité</Text>
+              {editing ? (
+                <TextInput
+                  style={styles.inputSmall}
+                  value={editPlantsPerHa}
+                  onChangeText={setEditPlantsPerHa}
+                  keyboardType="numeric"
+                />
+              ) : (
+                <Text style={styles.infoValue}>{parcelle.plants_per_ha || 10000} /ha</Text>
+              )}
+            </View>
+
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>📅 Créée le</Text>
+              <Text style={styles.infoValue}>
+                {new Date(parcelle.created_at).toLocaleDateString()}
+              </Text>
+            </View>
+          </View>
+
+          {editing ? (
+            <View style={styles.editingActions}>
+              <TouchableOpacity style={styles.saveBtn} onPress={saveParcelleChanges}>
+                <Icon name="content-save" size={18} color="#fff" />
+                <Text style={styles.btnText}>Enregistrer</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.normalActions}>
+              <TouchableOpacity style={styles.deleteBtn} onPress={deleteParcelle}>
+                <Icon name="trash-can" size={18} color="#eb6363" />
+                <Text style={styles.btnText}>Supprimer</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* 3️⃣ SECTION DES ANALYSES */}
+        <View style={styles.analysesSection}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Analyses de santé</Text>
+              <Text style={styles.sectionSubtitle}>Historique satellite</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.analyzeBtn, analyzing && styles.btnDisabled]}
+              onPress={handleNewAnalyse}
+              disabled={analyzing}
+            >
+              {analyzing ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Icon name="plus-circle" size={20} color="#fff" />
+                  <Text style={styles.analyzeBtnText}>Lancer</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {loading ? (
+            <ActivityIndicator size="large" color="#2E7D32" style={styles.loader} />
+          ) : (
+            <View style={styles.analysesList}>
+              {analyses.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Icon name="satellite-variant" size={60} color="#E0E0E0" />
+                  <Text style={styles.emptyText}>Aucune analyse effectuée.</Text>
+                </View>
+              ) : (
+                analyses.map((analyse) => (
                   <AnalyseCard
+                    key={analyse.id}
                     analyse={analyse}
                     onPress={() => handleAnalysePress(analyse)}
+                    loading={loadingAnalyseId === analyse.id}
                   />
-                  {loadingAnalyseId === analyse.id && (
-                    <View style={styles.loadingAnalyseOverlay}>
-                      <ActivityIndicator size="small" color="#fff" />
-                    </View>
-                  )}
-                </View>
-              ))
-            )}
-          </ScrollView>
-        )}
-      </View>
-    </View>
+                ))
+              )}
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 };
 
+// --- STYLES CSS ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#F7F9F7',
+  },
+  scrollContent: {
+    paddingBottom: 30,
   },
   mapContainer: {
     height: height * 0.25,
-    backgroundColor: '#e0e0e0',
+    backgroundColor: '#E0E0E0',
+    marginBottom: -20,
+    zIndex: 0,
+    borderRadius: 0,
+    overflow: 'hidden',
   },
   map: {
     flex: 1,
+    borderRadius: 0,
+  },
+  expandMapBtn: {
+    position: 'absolute',
+    bottom: 30,
+    right: 20,
+    backgroundColor: 'rgba(46, 125, 50, 0.9)',
+    padding: 10,
+    borderRadius: 12,
   },
   infoCard: {
     backgroundColor: '#fff',
     padding: 20,
-    margin: 10,
-    borderRadius: 10,
+    marginHorizontal: 15,
+    borderRadius: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 10,
+    elevation: 5,
+    zIndex: 1,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   parcelleNom: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#2E7D32',
-    marginBottom: 15,
+    color: '#1B5E20',
   },
   infoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    rowGap: 15,
   },
   infoItem: {
     width: '50%',
-    marginBottom: 10,
   },
   infoLabel: {
     fontSize: 12,
-    color: '#666',
+    color: '#757575',
+    fontWeight: '600',
+    marginBottom: 4,
   },
   infoValue: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: 'bold',
     color: '#333',
   },
   inputSmall: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 6,
-    padding: 8,
-    fontSize: 14,
-    backgroundColor: '#fff',
+    borderBottomWidth: 2,
+    borderBottomColor: '#2E7D32',
+    paddingVertical: 2,
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#2E7D32',
   },
-  parcelleActions: {
-    marginTop: 10,
+  editingActions: {
+    marginTop: 20,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
+    gap: 10,
+  },
+  normalActions: {
+    marginTop: 20,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  saveBtn: {
+    flex: 1,
+    backgroundColor: '#2E7D32',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 15,
     gap: 8,
   },
-  editButton: {
-    backgroundColor: '#1976d2',
-    borderRadius: 6,
+  deleteBtn: {
+    backgroundColor: '#FFEBEE',
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginRight: 5,
+    paddingHorizontal: 15,
+    borderRadius: 12,
+    gap: 6,
   },
-  editButtonText: {
+  btnText: {
+    color: '#2E7D32',
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+  saveBtnText: {
     color: '#fff',
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  deleteButton: {
-    backgroundColor: '#d32f2f',
-    borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginRight: 5,
-  },
-  deleteButtonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  saveButtonSmall: {
-    backgroundColor: '#2E7D32',
-    borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    marginRight: 5,
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  cancelButtonSmall: {
-    backgroundColor: '#757575',
-    borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-  },
-  cancelButtonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 12,
+    fontWeight: 'bold',
   },
   analysesSection: {
-    flex: 1,
-    backgroundColor: '#fff',
-    margin: 10,
-    marginTop: 0,
-    borderRadius: 10,
-    padding: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    padding: 20,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -524,99 +534,124 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: '#333',
   },
-  analyzeButton: {
-    backgroundColor: '#2E7D32',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 5,
-  },
-  analyzeButtonText: {
-    color: '#fff',
+  sectionSubtitle: {
     fontSize: 12,
+    color: '#9E9E9E',
+  },
+  analyzeBtn: {
+    backgroundColor: '#2E7D32',
+    flexDirection: 'row',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 15,
+    alignItems: 'center',
+    gap: 8,
+    elevation: 3,
+  },
+  analyzeBtnText: {
+    color: '#fff',
+    fontSize: 13,
     fontWeight: 'bold',
   },
-  buttonDisabled: {
-    backgroundColor: '#cccccc',
+  btnDisabled: {
+    backgroundColor: '#BDBDBD',
   },
   loader: {
-    marginTop: 20,
+    marginTop: 40,
   },
   analysesList: {
-    flex: 1,
+    marginTop: 10,
   },
   analyseCard: {
-    backgroundColor: '#f8f8f8',
-    padding: 15,
-    borderRadius: 8,
-    marginBottom: 10,
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 20,
+    marginBottom: 15,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: '#F0F0F0',
+    elevation: 2,
   },
   analyseHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 15,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   analyseDate: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: 'bold',
+    color: '#424242',
   },
   riskBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
   },
   riskText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
   },
   analyseStats: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 10,
+    justifyContent: 'space-between',
+    backgroundColor: '#F9FBF9',
+    padding: 12,
+    borderRadius: 15,
+    marginBottom: 15,
   },
-  stat: {
+  statBox: {
     alignItems: 'center',
   },
   statValue: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#1B5E20',
   },
   statLabel: {
     fontSize: 10,
-    color: '#666',
+    color: '#9E9E9E',
+    textTransform: 'uppercase',
+    marginTop: 2,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   analyseAction: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#2E7D32',
     fontStyle: 'italic',
+    fontWeight: '500',
   },
-  analyseContainer: {
-    position: 'relative',
-  },
-  loadingAnalyseOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+  cardLoaderOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 8,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 60,
   },
   emptyText: {
-    textAlign: 'center',
-    color: '#999',
-    marginTop: 30,
-    lineHeight: 20,
+    color: '#9E9E9E',
+    marginTop: 10,
+    fontSize: 14,
   },
 });
 
