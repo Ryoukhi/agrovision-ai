@@ -7,6 +7,8 @@ import ee
 import numpy as np
 import logging
 from datetime import datetime, timedelta
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from pathlib import Path
 import math  # ← AJOUTÉ pour les calculs de redimensionnement
@@ -293,7 +295,133 @@ class RealSatellite:
         logger.info(f"   Surface infectée réelle: {surface_infectee_ha:.3f} ha sur {surface_totale_ha} ha")
         
         return resultats
-    
+
+    def detect_zone_type(self, ndvi_array):
+        """
+        Détecte le type de zone à partir des statistiques NDVI
+
+        Args:
+            ndvi_array: tableau numpy contenant les valeurs NDVI
+
+        Returns:
+            dict: informations sur le type de zone
+        """
+        ndvi_mean = float(np.mean(ndvi_array))
+        ndvi_std = float(np.std(ndvi_array))
+        ndvi_min = float(np.min(ndvi_array))
+        ndvi_max = float(np.max(ndvi_array))
+
+        is_water = ndvi_mean < 0
+        is_urban = ndvi_mean < 0.25 and ndvi_std < 0.15
+        is_desert = ndvi_mean < 0.2 and ndvi_std > 0.1
+        is_agricultural = 0.3 < ndvi_mean < 0.8 and 0.05 < ndvi_std < 0.25
+
+        zone_type = 'unknown'
+        confidence = 0.5
+
+        if is_water:
+            zone_type = 'water'
+            confidence = 0.9
+        elif is_urban:
+            zone_type = 'urban'
+            confidence = 0.8
+        elif is_desert:
+            zone_type = 'desert'
+            confidence = 0.7
+        elif is_agricultural:
+            zone_type = 'agricultural'
+            confidence = 0.8
+        else:
+            zone_type = 'mixed'
+            confidence = 0.55
+
+        logger.info("📍 Analyse de zone:")
+        logger.info(f"   NDVI moyen: {ndvi_mean:.2f}")
+        logger.info(f"   Écart-type: {ndvi_std:.2f}")
+        logger.info(f"   Type détecté: {zone_type.upper()} (confiance: {confidence:.0%})")
+
+        return {
+            'type': zone_type,
+            'confidence': confidence,
+            'stats': {
+                'mean': ndvi_mean,
+                'std': ndvi_std,
+                'min': ndvi_min,
+                'max': ndvi_max
+            },
+            'is_agricultural': zone_type == 'agricultural'
+        }
+
+    def calculate_infected_area(self, ndvi, seuil=None):
+        """
+        Calcule la surface infectée à partir de l'image NDVI
+
+        Args:
+            ndvi: image NDVI
+            seuil: valeur en dessous de laquelle on considère comme malade
+                (si None, utilise la valeur de config)
+
+        Returns:
+            dict: résultats
+        """
+        # Utiliser le seuil de config si non spécifié
+        if seuil is None:
+            seuil = self.config.get('detection', {}).get('ndvi_seuil', 0.35)
+
+        zone_info = self.detect_zone_type(ndvi)
+
+        if not zone_info['is_agricultural']:
+            logger.warning(f"⚠️ Zone non agricole détectée: {zone_info['type']}")
+            pixels_total = ndvi.shape[0] * ndvi.shape[1]
+            return {
+                'pixels_malades': 0,
+                'pixels_total': int(pixels_total),
+                'pourcentage_pixels': 0.0,
+                'surface_infectee_ha': 0.0,
+                'masque': np.zeros_like(ndvi, dtype=bool),
+                'seuil_utilise': seuil,
+                'zone_type': zone_info['type'],
+                'zone_confidence': zone_info['confidence'],
+                'warning': f"ZONE_NON_AGRICOLE_{zone_info['type'].upper()}"
+            }
+
+        logger.info(f"✅ Zone agricole confirmée (type={zone_info['type']}, confiance={zone_info['confidence']:.0%})")
+        logger.info(f"🔍 Utilisation du seuil NDVI = {seuil}")
+
+        # 1. Créer un masque des pixels malades (True si malade)
+        masque_malade = ndvi < seuil
+
+        # 2. Compter le nombre de pixels malades
+        pixels_malades = np.sum(masque_malade)
+        pixels_total = ndvi.shape[0] * ndvi.shape[1]
+
+        # 3. Calculer le pourcentage (basé sur les pixels)
+        pourcentage_pixels = (pixels_malades / pixels_total) * 100
+
+        # 4. Calculer la surface réelle avec notre nouvelle méthode
+        surface_infectee_ha, surface_totale_ha, pourcentage_reel = self.calculate_real_area(
+            pixels_malades, pixels_total
+        )
+
+        resultats = {
+            'pixels_malades': int(pixels_malades),
+            'pixels_total': int(pixels_total),
+            'pourcentage_pixels': float(pourcentage_pixels),
+            'pourcentage_reel': float(pourcentage_reel),
+            'surface_totale_ha': float(surface_totale_ha),
+            'surface_infectee_ha': float(surface_infectee_ha),
+            'masque': masque_malade,
+            'seuil_utilise': seuil,
+            'zone_type': zone_info['type'],
+            'zone_confidence': zone_info['confidence'],
+        }
+
+        logger.info(f"📊 Analyse (seuil={seuil}):")
+        logger.info(f"   Pixels malades: {pixels_malades}/{pixels_total} ({pourcentage_pixels:.1f}%)")
+        logger.info(f"   Surface infectée réelle: {surface_infectee_ha:.3f} ha sur {surface_totale_ha} ha")
+
+        return resultats
+
     def detect_anomalies_multiple_indices(self, indices_dict, seuils=None):
         """
         Détecte les anomalies en combinant plusieurs indices
@@ -340,16 +468,17 @@ class RealSatellite:
             'masques_individuels': masques,
             'seuils_utilises': seuils
         }
-    
-    def plot_ndvi(self, ndvi, masque=None, titre="Image NDVI", save_path=None):
+
+    def plot_ndvi(self, ndvi, masque=None, titre="Image NDVI", save_path=None, show=False):
         """
-        Affiche l'image NDVI et optionnellement le masque
-        
+        Génère un graphique NDVI et optionnellement le masque
+
         Args:
             ndvi: image NDVI
             masque: masque des zones malades (optionnel)
             titre: titre du graphique
             save_path: chemin pour sauvegarder (optionnel)
+            show: afficher le graphique (si True)
         """
         fig, axes = plt.subplots(1, 2 if masque is not None else 1, figsize=(12, 5))
         
@@ -361,14 +490,12 @@ class RealSatellite:
             axes.set_ylabel('Pixels')
             plt.colorbar(im, ax=axes, label='NDVI')
         else:
-            # Premier graphique : NDVI
             im1 = axes[0].imshow(ndvi, cmap='RdYlGn', vmin=0, vmax=1)
             axes[0].set_title(f'{titre} - NDVI')
             axes[0].set_xlabel('Pixels')
             axes[0].set_ylabel('Pixels')
             plt.colorbar(im1, ax=axes[0], label='NDVI')
             
-            # Deuxième graphique : masque des zones malades
             im2 = axes[1].imshow(masque, cmap='Reds')
             axes[1].set_title('Zones malades détectées')
             axes[1].set_xlabel('Pixels')
@@ -380,17 +507,19 @@ class RealSatellite:
         if save_path:
             plt.savefig(save_path, dpi=150)
             logger.info(f"✅ Graphique sauvegardé: {save_path}")
-        
-        plt.show()
+        if show:
+            plt.show()
+        plt.close(fig)
     
-    def plot_all_indices(self, indices_dict, masque=None, save_path=None):
+    def plot_all_indices(self, indices_dict, masque=None, save_path=None, show=False):
         """
-        Affiche tous les indices côte à côte
+        Génère tous les indices côte à côte
         
         Args:
             indices_dict: dict des indices
             masque: masque des anomalies (optionnel)
             save_path: chemin de sauvegarde
+            show: afficher le graphique (si True)
         """
         n_indices = len(indices_dict)
         fig, axes = plt.subplots(1, n_indices + (1 if masque is not None else 0), 
@@ -415,8 +544,9 @@ class RealSatellite:
         if save_path:
             plt.savefig(save_path, dpi=150)
             logger.info(f"✅ Graphique multi-indices sauvegardé: {save_path}")
-        
-        plt.show()
+        if show:
+            plt.show()
+        plt.close(fig)
 
     def calculate_real_area(self, pixels_malades, pixels_total):
         """

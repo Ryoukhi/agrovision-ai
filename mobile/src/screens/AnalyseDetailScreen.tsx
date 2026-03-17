@@ -107,6 +107,15 @@ const formatDate = (dateStr: string) =>
     hour: '2-digit', minute: '2-digit',
   });
 
+const formatSatelliteDate = (dateStr?: string) => {
+  if (!dateStr) return 'Date image non disponible';
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return dateStr;
+  return date.toLocaleDateString('fr-FR', {
+    day: '2-digit', month: 'long', year: 'numeric',
+  });
+};
+
 type RiskLevel = 'FAIBLE' | 'MODÉRÉ' | 'ÉLEVÉ' | 'CRITIQUE';
 
 const RISK_CONFIG: Record<RiskLevel, {
@@ -384,8 +393,20 @@ A FAIRE : ${analyse.action_recommandee}`,
         <View style={styles.riskTextBlock}>
           <Text style={[styles.riskTitle, { color: risk.color }]}>{risk.label}</Text>
           <Text style={styles.riskDate}>{formatDate(analyse.date_analyse)}</Text>
+          <Text style={styles.imageDate}>🛰️ Image satellite du {formatSatelliteDate(analyse.date_image_satellite)}</Text>
         </View>
       </View>
+
+      {analyse.zone_warning ? (
+        <View style={styles.warningCard}>
+          <Text style={styles.warningIcon}>⚠️</Text>
+          <Text style={styles.warningTitle}>Zone non agricole détectée</Text>
+          <Text style={styles.warningText}>
+            Cette zone est analysée comme {analyse.zone_type ?? 'inconnue'} (confiance {safeNum(analyse.zone_confidence, 2)}).
+            Les valeurs NDVI peuvent ne pas refléter une maladie de cultures.
+          </Text>
+        </View>
+      ) : null}
 
       {/* ── RECOMMANDATION ── */}
       <View style={[styles.recoCard, { borderColor: risk.color }]}>
@@ -611,6 +632,11 @@ const styles = StyleSheet.create({
   riskTextBlock: { flex: 1 },
   riskTitle:     { fontSize: 22, fontWeight: '900', letterSpacing: 0.3 },
   riskDate:      { fontSize: 12, color: '#888', marginTop: 3 },
+  imageDate:     { fontSize: 12, color: '#555', marginTop: 4, fontWeight: '600' },
+  warningCard:   { marginHorizontal: 16, marginBottom: 14, padding: 12, borderRadius: 12, backgroundColor: '#FFF4E5', borderLeftWidth: 4, borderLeftColor: '#E65100' },
+  warningIcon:   { fontSize: 20, marginBottom: 6 },
+  warningTitle:  { fontSize: 14, fontWeight: '800', color: '#BF360C', marginBottom: 4 },
+  warningText:   { fontSize: 12, color: '#5D4037', lineHeight: 18 },
 
   recoCard: {
     marginHorizontal: 16, marginBottom: 16, padding: 18,

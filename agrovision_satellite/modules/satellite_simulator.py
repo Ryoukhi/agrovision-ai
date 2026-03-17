@@ -4,6 +4,8 @@ Pour l'instant, on simule des données en attendant d'avoir accès aux vraies
 """
 
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import logging
 from pathlib import Path
@@ -173,7 +175,9 @@ class SatelliteSimulator:
         output_path = Path(self.config['outputs']['save_path'])
         output_path.mkdir(parents=True, exist_ok=True)
         plt.savefig(output_path / 'simulation_ndvi.png', dpi=150)
-        plt.show()
+        if show:
+            plt.show()
+        plt.close(fig)
         
         logger.info(f"✅ Graphique sauvegardé dans {output_path / 'simulation_ndvi.png'}")
 

@@ -1,0 +1,16 @@
+{
+  "date_analyse": "2026-03-16T22:12:36.048962",
+  "date_image_satellite": "2026-01-12",
+  "taux_infection": 1.8,
+  "surface_infectee_ha": 0.01,
+  "plants_infectes": 88,
+  "temperature_moyenne": 24.5,
+  "humidite_moyenne": 71,
+  "vent_moyen": 1.4,
+  "risque": "MOD\u00c9R\u00c9",
+  "evolution_7j": 45.5,
+  "plants_infectes_7j": 128,
+  "action_recommandee": "Surveillance renforc\u00e9e - Pr\u00e9parez des traitements",
+  "image_ndvi_path": "E:\\EADL\\EADL\\PROJET TUTOR\u00c9\\agrovision-ai\\data\\outputs\\analyse_1_ndvi.png",
+  "image_multi_path": "E:\\EADL\\EADL\\PROJET TUTOR\u00c9\\agrovision-ai\\data\\outputs\\analyse_1_multi.png"
+}

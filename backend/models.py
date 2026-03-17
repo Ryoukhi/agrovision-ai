@@ -77,6 +77,11 @@ class Analyse(db.Model):
     rapport_json_path = db.Column(db.String(200))
     image_ndvi_path = db.Column(db.String(200))
     image_multi_path = db.Column(db.String(200))
+
+    # Type de zone détectée
+    zone_type = db.Column(db.String(50), default='unknown')
+    zone_warning = db.Column(db.String(200), nullable=True)
+    zone_confidence = db.Column(db.Float, default=0.0)
     
     # Relation
     parcelle_id = db.Column(db.Integer, db.ForeignKey('parcelles.id'), nullable=False)

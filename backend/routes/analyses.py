@@ -9,6 +9,7 @@ from models import Parcelle, Analyse
 import json
 from datetime import datetime
 import os
+from sqlalchemy import inspect
 
 # Importer le service d'analyse
 from services.analyse_service import AnalyseService
@@ -54,7 +55,7 @@ def get_analyse(analyse_id):
     if not parcelle:
         return jsonify({'error': 'Accès non autorisé'}), 403
     
-    return jsonify({
+    result = {
         'id': analyse.id,
         'date_analyse': analyse.date_analyse.isoformat(),
         'date_image_satellite': analyse.date_image_satellite,
@@ -71,7 +72,16 @@ def get_analyse(analyse_id):
         'image_ndvi_path': analyse.image_ndvi_path,
         'image_multi_path': analyse.image_multi_path,
         'parcelle_id': analyse.parcelle_id
-    }), 200
+    }
+    insp = inspect(db.engine)
+    cols = [c['name'] for c in insp.get_columns('analyses')]
+    if 'zone_type' in cols:
+        result['zone_type'] = analyse.zone_type
+    if 'zone_warning' in cols:
+        result['zone_warning'] = analyse.zone_warning
+    if 'zone_confidence' in cols:
+        result['zone_confidence'] = analyse.zone_confidence
+    return jsonify(result), 200
 
 @analyses_bp.route('/parcelle/<int:parcelle_id>/run', methods=['POST'])
 @jwt_required()
@@ -79,43 +89,46 @@ def run_analyse(parcelle_id):
     """Déclenche une nouvelle analyse pour une parcelle avec le vrai moteur IA"""
     current_user_id = get_jwt_identity()
     
-    # Vérifier la parcelle
     parcelle = Parcelle.query.filter_by(id=parcelle_id, user_id=current_user_id).first()
     if not parcelle:
         return jsonify({'error': 'Parcelle non trouvée'}), 404
-    
+
     try:
-        # Lancer l'analyse avec le moteur IA
         result = analyse_service.run_analyse(parcelle)
-        
-        # Créer l'analyse dans la base
-        nouvelle_analyse = Analyse(
-            parcelle_id=parcelle_id,
-            date_analyse=datetime.fromisoformat(result['date_analyse']),
-            date_image_satellite=result['date_image_satellite'],
-            taux_infection=result['taux_infection'],
-            surface_infectee_ha=result['surface_infectee_ha'],
-            plants_infectes=result['plants_infectes'],
-            temperature_moyenne=result['temperature_moyenne'],
-            humidite_moyenne=result['humidite_moyenne'],
-            vent_moyen=result['vent_moyen'],
-            risque=result['risque'],
-            evolution_7j=result['evolution_7j'],
-            plants_infectes_7j=result['plants_infectes_7j'],
-            action_recommandee=result['action_recommandee'],
-            image_ndvi_path=result['image_ndvi_path'],
-            image_multi_path=result['image_multi_path']
-        )
-        
+        analyse_kwargs = {
+            'parcelle_id': parcelle_id,
+            'date_analyse': datetime.fromisoformat(result['date_analyse']),
+            'date_image_satellite': result['date_image_satellite'],
+            'taux_infection': result['taux_infection'],
+            'surface_infectee_ha': result['surface_infectee_ha'],
+            'plants_infectes': result['plants_infectes'],
+            'temperature_moyenne': result['temperature_moyenne'],
+            'humidite_moyenne': result['humidite_moyenne'],
+            'vent_moyen': result['vent_moyen'],
+            'risque': result['risque'],
+            'evolution_7j': result['evolution_7j'],
+            'plants_infectes_7j': result['plants_infectes_7j'],
+            'action_recommandee': result['action_recommandee'],
+            'image_ndvi_path': result['image_ndvi_path'],
+            'image_multi_path': result['image_multi_path']
+        }
+        insp = inspect(db.engine)
+        cols = [c['name'] for c in insp.get_columns('analyses')]
+        if 'zone_type' in cols:
+            analyse_kwargs['zone_type'] = result.get('zone_type', 'unknown')
+        if 'zone_warning' in cols:
+            analyse_kwargs['zone_warning'] = result.get('zone_warning')
+        if 'zone_confidence' in cols:
+            analyse_kwargs['zone_confidence'] = result.get('zone_confidence', 0.0)
+
+        nouvelle_analyse = Analyse(**analyse_kwargs)
         db.session.add(nouvelle_analyse)
         db.session.commit()
-        
         return jsonify({
             'message': 'Analyse lancée avec succès',
             'analyse_id': nouvelle_analyse.id,
             'result': result
         }), 201
-        
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500

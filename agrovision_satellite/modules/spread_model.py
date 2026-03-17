@@ -195,13 +195,16 @@ class EpidemiologicalModel:
         
         return resultat
     
-    def plot_prediction(self, df):
+    def plot_prediction(self, df, show=False):
         """
         Affiche le graphique de prédiction
         
         Args:
             df: DataFrame retourné par predict_spread()
+            show: afficher le graphique (si True)
         """
+        import matplotlib
+        matplotlib.use('Agg')
         import matplotlib.pyplot as plt
         
         fig, axes = plt.subplots(1, 2, figsize=(14, 5))
@@ -232,7 +235,9 @@ class EpidemiologicalModel:
         ax.legend()
         
         plt.tight_layout()
-        plt.show()
+        if show:
+            plt.show()
+        plt.close(fig)
 
 # Test du module
 if __name__ == "__main__":

@@ -90,7 +90,13 @@ class AnalyseEngine:
             # Détection des zones malades
             seuil = self.config.get('detection', {}).get('ndvi_seuil', 0.35)
             results = self.satellite.calculate_infected_area(ndvi, seuil=seuil)
-            
+            zone_type = results.get('zone_type', 'unknown')
+            zone_confidence = results.get('zone_confidence', 0)
+            zone_warning = results.get('warning')
+            if zone_warning:
+                print(f"⚠️ ATTENTION: Zone de type {zone_type} détectée ({zone_confidence:.0%})")
+                print("   Cette analyse ne concerne pas une zone agricole")
+
             # Sauvegarder les images
             image_ndvi_path = self.output_dir / f"analyse_{parcelle_id}_ndvi.png"
             image_multi_path = self.output_dir / f"analyse_{parcelle_id}_multi.png"
@@ -126,7 +132,10 @@ class AnalyseEngine:
             sim = SatelliteSimulator(self.config)
             ndvi = sim.generate_ndvi_image(avec_maladies=True)
             results = sim.calculate_infected_area(ndvi, seuil=0.35)
-            
+            zone_type = results.get('zone_type', 'simulated')
+            zone_confidence = results.get('zone_confidence', 1.0)
+            zone_warning = results.get('warning')
+
             ratio_infection = results['pixels_malades'] / results['pixels_total']
             surface_infectee_ha = surface_ha * ratio_infection
             plants_infectes = int(surface_infectee_ha * plants_per_ha)
@@ -200,6 +209,9 @@ class AnalyseEngine:
             'evolution_7j': float(round(risk['augmentation'] * 100, 1)),
             'plants_infectes_7j': int(risk['infectes_futur']),
             'action_recommandee': str(risk['action']),
+            'zone_type': zone_type,
+            'zone_warning': zone_warning,
+            'zone_confidence': float(zone_confidence),
             'image_ndvi_path': str(image_ndvi_path) if image_ndvi_path else None,
             'image_multi_path': str(image_multi_path) if image_multi_path else None,
         }
