@@ -77,6 +77,7 @@ class Analyse(db.Model):
     rapport_json_path = db.Column(db.String(200))
     image_ndvi_path = db.Column(db.String(200))
     image_multi_path = db.Column(db.String(200))
+    image_rgb_path = db.Column(db.String(200), nullable=True)
 
     # Type de zone détectée
     zone_type = db.Column(db.String(50), default='unknown')

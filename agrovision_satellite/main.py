@@ -115,7 +115,7 @@ class AgroVisionPipeline:
         
         try:
             # Récupérer l'image NDVI réelle avec tous les indices
-            ndvi, all_indices, date_image = self.satellite.get_ndvi_image(
+            ndvi, all_indices, date_image, image = self.satellite.get_ndvi_image(
                 coords,
                 date_debut,
                 date_fin,

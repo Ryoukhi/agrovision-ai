@@ -8,6 +8,7 @@ import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 import numpy as np
+import ee
 
 # Ajouter le chemin pour importer les modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -80,7 +81,7 @@ class AnalyseEngine:
         date_debut = (datetime.now() - timedelta(days=60)).strftime('%Y-%m-%d')
         
         try:
-            ndvi, all_indices, date_image = self.satellite.get_ndvi_image(
+            ndvi, all_indices, date_image, image = self.satellite.get_ndvi_image(
                 coords,
                 date_debut,
                 date_fin,
@@ -96,6 +97,17 @@ class AnalyseEngine:
             if zone_warning:
                 print(f"⚠️ ATTENTION: Zone de type {zone_type} détectée ({zone_confidence:.0%})")
                 print("   Cette analyse ne concerne pas une zone agricole")
+
+            # ✅ NOUVEAU : Extraire et sauvegarder l'image RGB
+            image_rgb_path = None
+            try:
+                roi = ee.Geometry.Rectangle(coords)
+                rgb_array = self.satellite.get_rgb_image(image, roi, target_side=512)
+                image_rgb_path = self.output_dir / f"analyse_{parcelle_id}_rgb.png"
+                self.satellite.save_rgb_image(rgb_array, image_rgb_path)
+            except Exception as e:
+                print(f"❌ Erreur extraction RGB: {e}")
+                image_rgb_path = None
 
             # Sauvegarder les images
             image_ndvi_path = self.output_dir / f"analyse_{parcelle_id}_ndvi.png"
@@ -158,6 +170,7 @@ class AnalyseEngine:
             print(f"✅ Analyse satellite simulée (fallback)")
             print(f"   Taux infection: {ratio_infection*100:.1f}%")
             print(f"   Images sauvegardées: {image_ndvi_path}")
+            image_rgb_path = None
         
         # 2. ANALYSE MÉTÉO
         print("\n🌤️ ÉTAPE 2 - ANALYSE MÉTÉO")
@@ -214,6 +227,7 @@ class AnalyseEngine:
             'zone_confidence': float(zone_confidence),
             'image_ndvi_path': str(image_ndvi_path) if image_ndvi_path else None,
             'image_multi_path': str(image_multi_path) if image_multi_path else None,
+            'image_rgb_path': str(image_rgb_path) if image_rgb_path else None,
         }
         
         # Sauvegarder le rapport JSON avec le convertisseur personnalisé

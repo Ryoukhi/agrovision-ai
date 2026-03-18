@@ -37,7 +37,7 @@ def main():
     # 4. Récupérer une image
     print("\n📡 Récupération image satellite...")
     try:
-        ndvi, all_indices, date = sat.get_ndvi_image(
+        ndvi, all_indices, date, image = sat.get_ndvi_image(
             coords,
             '2026-01-01',
             '2026-03-01',

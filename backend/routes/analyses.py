@@ -82,7 +82,8 @@ def get_analyse(analyse_id):
         'action_recommandee': analyse.action_recommandee,
         'image_ndvi_path': analyse.image_ndvi_path,
         'image_multi_path': analyse.image_multi_path,
-        'parcelle_id': analyse.parcelle_id
+        'parcelle_id': analyse.parcelle_id,
+        'image_rgb_path': getattr(analyse, 'image_rgb_path', None)
     }
     insp = inspect(db.engine)
     cols = [c['name'] for c in insp.get_columns('analyses')]
@@ -120,8 +121,9 @@ def run_analyse(parcelle_id):
             'evolution_7j': result['evolution_7j'],
             'plants_infectes_7j': result['plants_infectes_7j'],
             'action_recommandee': result['action_recommandee'],
-            'image_ndvi_path': result['image_ndvi_path'],
-            'image_multi_path': result['image_multi_path']
+            'image_ndvi_path': result.get('image_ndvi_path'),
+            'image_multi_path': result.get('image_multi_path'),
+            'image_rgb_path': result.get('image_rgb_path'),
         }
         insp = inspect(db.engine)
         cols = [c['name'] for c in insp.get_columns('analyses')]
@@ -165,6 +167,8 @@ def get_image(analyse_id, type):
         path = analyse.image_ndvi_path
     elif type == 'multi':
         path = analyse.image_multi_path
+    elif type == 'rgb':
+        path = getattr(analyse, 'image_rgb_path', None)
     else:
         return jsonify({'error': 'Type d\'image invalide'}), 400
     

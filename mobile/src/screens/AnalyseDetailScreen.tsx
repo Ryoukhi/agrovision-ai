@@ -231,6 +231,7 @@ const AnalyseDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const [sharing, setSharing] = useState(false);
   const [ndviImageUri, setNdviImageUri] = useState<string | null>(null);
   const [multiImageUri, setMultiImageUri] = useState<string | null>(null);
+  const [rgbImageUri, setRgbImageUri] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<{uri:string; title:string; subtitle:string} | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [modalScale, setModalScale] = useState(1);
@@ -258,6 +259,20 @@ const AnalyseDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           });
           const multiBase64 = `data:image/png;base64,${arrayBufferToBase64(multiResponse.data)}`;
           setMultiImageUri(multiBase64);
+        }
+
+        // Fetch RGB image
+        if (analyse.image_rgb_path) {
+          try {
+            const rgbResponse = await api.get(`/analyses/${analyse.id}/image/rgb`, {
+              responseType: 'arraybuffer',
+            });
+            const rgbBase64 = `data:image/png;base64,${arrayBufferToBase64(rgbResponse.data)}`;
+            setRgbImageUri(rgbBase64);
+          } catch (err) {
+            console.warn('RGB image non disponible', err);
+            setRgbImageUri(null);
+          }
         }
       } catch (error) {
         console.error('Erreur lors du chargement des images:', error);
@@ -546,6 +561,13 @@ A FAIRE : ${analyse.action_recommandee}`,
             uri={multiImageUri}
             onPress={() => multiImageUri && setPreviewImage({ uri: multiImageUri, title: 'Multi-spectral', subtitle: 'image multispectrale de la parcelle' })}
             onDownload={() => downloadImage(multiImageUri, 'Multi-spectral')}
+          />
+          <ImageCard
+            title="RGB Réel"
+            subtitle="Image sans filtre"
+            uri={rgbImageUri}
+            onPress={() => rgbImageUri && setPreviewImage({ uri: rgbImageUri, title: 'RGB réel', subtitle: 'Vue réelle de la parcelle' })}
+            onDownload={() => downloadImage(rgbImageUri, 'RGB')}
           />
         </ScrollView>
       </View>

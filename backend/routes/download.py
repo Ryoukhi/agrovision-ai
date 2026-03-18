@@ -53,5 +53,7 @@ def download_image(analyse_id, type):
         return send_file(analyse.image_ndvi_path, as_attachment=True, download_name=f"ndvi_{analyse_id}.png")
     elif type == 'multi' and analyse.image_multi_path:
         return send_file(analyse.image_multi_path, as_attachment=True, download_name=f"multi_{analyse_id}.png")
+    elif type == 'rgb' and getattr(analyse, 'image_rgb_path', None):
+        return send_file(analyse.image_rgb_path, as_attachment=True, download_name=f"rgb_{analyse_id}.png")
     else:
         return jsonify({'error': 'Image non trouvée'}), 404

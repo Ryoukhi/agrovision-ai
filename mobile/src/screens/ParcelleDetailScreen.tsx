@@ -143,7 +143,8 @@ const AnalyseCard: React.FC<{ analyse: Analyse; onPress: () => void; loading: bo
 
 // --- COMPOSANT PRINCIPAL ---
 const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
-  const { parcelle } = route.params;
+  const initialParcelle: Parcelle = route.params.parcelle;
+  const [parcelle, setParcelle] = useState<Parcelle>(initialParcelle);
   const [analyses, setAnalyses] = useState<Analyse[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -276,6 +277,7 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         {/* 1️⃣ MINI-CARTE INTERACTIVE */}
         <View style={styles.mapContainer}>
           <WebView
+            key={`${parcelle.id}-${parcelle.lat_min}-${parcelle.lat_max}-${parcelle.long_min}-${parcelle.long_max}`}
             style={styles.map}
             source={{ html: getMiniMapHTML(parcelle) }}
             javaScriptEnabled={true}

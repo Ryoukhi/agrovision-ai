@@ -243,8 +243,46 @@ class RealSatellite:
         for idx_name, idx_array in results.items():
             logger.info(f"   {idx_name}: min={idx_array.min():.2f}, max={idx_array.max():.2f}, moy={idx_array.mean():.2f}")
         
-        return ndvi_array, results, date_str
-    
+        return ndvi_array, results, date_str, image
+
+    def get_rgb_image(self, image, roi, target_side=512):
+        """
+        Extrait une image RGB réelle (sans filtre) de la parcelle
+        """
+        logger.info("📸 Extraction de l'image RGB réelle...")
+        rgb = image.select(['B4', 'B3', 'B2'])
+        sampled = rgb.sampleRectangle(region=roi, defaultValue=0)
+
+        red = np.array(sampled.get('B4').getInfo())
+        green = np.array(sampled.get('B3').getInfo())
+        blue = np.array(sampled.get('B2').getInfo())
+
+        def normalize_band(band):
+            band = np.nan_to_num(band, nan=0)
+            min_val = np.min(band)
+            max_val = np.max(band)
+            if max_val > min_val:
+                band = (band - min_val) / (max_val - min_val) * 255
+            return np.uint8(np.clip(band, 0, 255))
+
+        red_norm = normalize_band(red)
+        green_norm = normalize_band(green)
+        blue_norm = normalize_band(blue)
+
+        rgb_array = np.stack([red_norm, green_norm, blue_norm], axis=2)
+        logger.info(f"✅ Image RGB récupérée, taille: {rgb_array.shape}")
+        return rgb_array
+
+    def save_rgb_image(self, rgb_array, save_path):
+        """Sauvegarde l'image RGB en PNG"""
+        plt.figure(figsize=(10, 10))
+        plt.imshow(rgb_array)
+        plt.axis('off')
+        plt.tight_layout(pad=0)
+        plt.savefig(save_path, dpi=150, bbox_inches='tight', pad_inches=0)
+        plt.close()
+        logger.info(f"✅ Image RGB sauvegardée: {save_path}")
+
     def calculate_infected_area(self, ndvi, seuil=None):
         """
         Calcule la surface infectée à partir de l'image NDVI
