@@ -41,7 +41,7 @@ function AppNavigator() {
             name="Home" 
             component={HomeScreen} 
             options={{ 
-              title: 'Mes parcelles',
+              title: 'AgroVision',
               headerLeft: () => null
             }}
           />
