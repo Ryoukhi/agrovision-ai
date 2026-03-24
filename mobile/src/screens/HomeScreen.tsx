@@ -12,7 +12,9 @@ import {
 } from 'react-native';
 // Importation de l'icône
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import api from '../api/client';
 import { Parcelle, RootStackParamList } from '../types';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -27,6 +29,8 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const [parcelles, setParcelles] = useState<Parcelle[]>([]);
   const [loading, setLoading] = useState(true);
   const { user, logout } = useAuth();
+  const { t } = useTranslation();
+  const { isDark, colors } = useTheme();
 
   useEffect(() => {
     loadParcelles();
@@ -46,34 +50,34 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   const handleLogout = () => {
-    Alert.alert('Déconnexion', 'Voulez-vous vous déconnecter ?', [
-      { text: 'Annuler', style: 'cancel' },
-      { text: 'Quitter', onPress: async () => await logout(), style: 'destructive' },
+    Alert.alert(t('logout'), t('logout_confirm'), [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('quit'), onPress: async () => await logout(), style: 'destructive' },
     ]);
   };
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2E7D32" />
-        <Text style={styles.loadingText}>Chargement de vos terres...</Text>
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>{t('loading_lands')}</Text>
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       
       {/* 1️⃣ EN-TÊTE PREMIUM */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         <View style={styles.headerLeft}>
-          <View style={styles.avatarBox}>
-            <Text style={styles.avatarText}>{user?.username?.charAt(0).toUpperCase()}</Text>
+          <View style={[styles.avatarBox, { backgroundColor: isDark ? '#2E7D32' : '#E8F5E9', borderColor: colors.primary }]}>
+            <Text style={[styles.avatarText, { color: isDark ? '#fff' : colors.primary }]}>{user?.username?.charAt(0).toUpperCase()}</Text>
           </View>
           <View>
-            <Text style={styles.welcomeText}>Bonjour 👋</Text>
-            <Text style={styles.userNameText}>{user?.username}</Text>
+            <Text style={[styles.welcomeText, { color: colors.textSecondary }]}>{t('hello')}</Text>
+            <Text style={[styles.userNameText, { color: colors.text }]}>{user?.username}</Text>
           </View>
         </View>
         <TouchableOpacity onPress={handleLogout} style={styles.iconButton}>
@@ -91,7 +95,7 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
             <View style={styles.summaryCard}>
               <View style={styles.summaryInfo}>
                 <Text style={styles.summaryNumber}>{parcelles.length}</Text>
-                <Text style={styles.summaryLabel}>Parcelles actives</Text>
+                <Text style={styles.summaryLabel}>{t('active_plots')}</Text>
               </View>
               <View style={styles.summaryIconCircle}>
                 <Icon name="map-marker-path" size={32} color="#fff" />
@@ -99,15 +103,15 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
             </View>
 
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Mes exploitations</Text>
-              <Icon name="leaf" size={20} color="#2E7D32" />
+              <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{t('my_farms')}</Text>
+              <Icon name="leaf" size={20} color={colors.primary} />
             </View>
           </>
         }
         renderItem={({ item }) => (
           <TouchableOpacity
             activeOpacity={0.8}
-            style={styles.parcelleCard}
+            style={[styles.parcelleCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={() => navigation.navigate('ParcelleDetail', { parcelle: item })}>
             
             <View style={styles.cardTop}>
@@ -122,38 +126,38 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
 
             <View style={styles.cardDetails}>
               <View style={styles.detailItem}>
-                <Icon name="sprout" size={16} color="#757575" />
-                <Text style={styles.detailText}>Culture: <Text style={styles.boldText}>{item.culture || 'Manioc'}</Text></Text>
+                <Icon name="sprout" size={16} color={colors.textSecondary} />
+                <Text style={[styles.detailText, { color: colors.textSecondary }]}>{t('crop')} <Text style={[styles.boldText, { color: colors.text }]}>{item.culture || 'Manioc'}</Text></Text>
               </View>
               <View style={styles.detailItem}>
-                <Icon name="calendar-clock" size={16} color="#757575" />
-                <Text style={styles.detailText}>
-                  Depuis le {new Date(item.created_at).toLocaleDateString()}
+                <Icon name="calendar-clock" size={16} color={colors.textSecondary} />
+                <Text style={[styles.detailText, { color: colors.textSecondary }]}>
+                  {t('since')} {new Date(item.created_at).toLocaleDateString()}
                 </Text>
               </View>
             </View>
 
-            <View style={styles.cardFooter}>
-                <Text style={styles.actionLink}>Consulter le diagnostic</Text>
-                <Icon name="chevron-right" size={20} color="#2E7D32" />
+            <View style={[styles.cardFooter, { backgroundColor: isDark ? colors.card : '#F9FBE7' }]}>
+                <Text style={[styles.actionLink, { color: colors.primary }]}>{t('view_diagnostic')}</Text>
+                <Icon name="chevron-right" size={20} color={colors.primary} />
             </View>
           </TouchableOpacity>
         )}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Icon name="image-filter-hdr" size={80} color="#E0E0E0" />
-            <Text style={styles.emptyTitle}>Aucune terre ici</Text>
-            <Text style={styles.emptyDesc}>Ajoutez votre première parcelle pour commencer l'analyse.</Text>
+            <Icon name="image-filter-hdr" size={80} color={colors.border} />
+            <Text style={[styles.emptyTitle, { color: colors.textSecondary }]}>{t('no_land_title')}</Text>
+            <Text style={[styles.emptyDesc, { color: colors.textSecondary }]}>{t('no_land_desc')}</Text>
           </View>
         }
       />
 
       {/* 3️⃣ BOUTON D'ACTION FLOTTANT (FAB) */}
       <TouchableOpacity
-        style={styles.fab}
+        style={[styles.fab, { backgroundColor: colors.primary }]}
         onPress={() => navigation.navigate('Map')}>
         <Icon name="plus" size={30} color="#fff" />
-        <Text style={styles.fabText}>Nouveau</Text>
+        <Text style={styles.fabText}>{t('new_btn')}</Text>
       </TouchableOpacity>
     </SafeAreaView>
   );

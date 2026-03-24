@@ -8,15 +8,11 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { StackNavigationProp } from '@react-navigation/stack';
-
-// Définir les types pour la navigation (sera complété plus tard)
-type RootStackParamList = {
-  Login: undefined;
-  Register: undefined;
-  Home: undefined;
-};
+import { RootStackParamList } from '../types';
+import { useTheme } from '../context/ThemeContext';
 
 type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'>;
 
@@ -29,10 +25,12 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
+  const { t } = useTranslation();
+  const { isDark, colors } = useTheme();
 
   const handleLogin = async () => {
     if (!username || !password) {
-      Alert.alert('Erreur', 'Veuillez remplir tous les champs');
+      Alert.alert(t('error'), t('fill_fields'));
       return;
     }
 
@@ -46,39 +44,41 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>🌱 AgroVision AI</Text>
-      <Text style={styles.subtitle}>Connectez-vous à votre espace</Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <Text style={[styles.title, { color: colors.primary }]}>🌱 AgroVision AI</Text>
+      <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{t('login_title')}</Text>
 
       <TextInput
-        style={styles.input}
-        placeholder="Nom d'utilisateur"
+        style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+        placeholderTextColor={colors.textSecondary}
+        placeholder={t('username_email')}
         value={username}
         onChangeText={setUsername}
         autoCapitalize="none"
       />
 
       <TextInput
-        style={styles.input}
-        placeholder="Mot de passe"
+        style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+        placeholderTextColor={colors.textSecondary}
+        placeholder={t('password')}
         value={password}
         onChangeText={setPassword}
         secureTextEntry
       />
 
       <TouchableOpacity
-        style={styles.button}
+        style={[styles.button, { backgroundColor: colors.primary }]}
         onPress={handleLogin}
         disabled={loading}>
         {loading ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.buttonText}>Se connecter</Text>
+          <Text style={styles.buttonText}>{t('login_btn')}</Text>
         )}
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-        <Text style={styles.link}>Pas encore de compte ? S'inscrire</Text>
+        <Text style={[styles.link, { color: colors.primary }]}>{t('no_account')}</Text>
       </TouchableOpacity>
     </View>
   );

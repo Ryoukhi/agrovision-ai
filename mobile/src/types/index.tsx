@@ -49,8 +49,10 @@ export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
   Home: undefined;
+  Settings: undefined;
   Map: undefined;
   ParcelleDetail: { parcelle: Parcelle };
-  AnalyseDetail: { analyse: Analyse };
-  EditParcelleMap: { parcelle: Parcelle };
+  AnalyseDetail: { id: number };
+  EditParcelleMap: { id: number; currentCoordinates: any[] };
+  Onboarding: undefined;
 };
