@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "mobile",
-    "slug": "mobile",
+    "slug": "agrovision",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -26,7 +26,11 @@
       "package": "com.yourapp.agrovision",
       "config": {
         "googleMapsApiKey": "YOUR_ANDROID_API_KEY"
-      }
+      },
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -39,7 +43,14 @@
         }
       ],
       "expo-sharing",
-      "expo-localization"
-    ]
+      "expo-localization",
+      "expo-web-browser"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "042fb264-f508-475b-a8ba-b0ddca16db96"
+      }
+    },
+    "owner": "krieger747s-organization"
   }
 }

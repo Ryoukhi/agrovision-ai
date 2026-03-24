@@ -8,6 +8,10 @@ from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identi
 from extensions import db, bcrypt
 from models import User
 import re
+import string
+import random
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
@@ -105,3 +109,64 @@ def profile():
         'created_at': user.created_at.isoformat(),
         'nb_parcelles': len(user.parcelles)
     }), 200
+
+@auth_bp.route('/google', methods=['POST'])
+def google_auth():
+    """Authentification via Google OAuth2"""
+    data = request.get_json()
+    token = data.get('token')
+    
+    if not token:
+        return jsonify({'error': 'Token manquant'}), 400
+        
+    try:
+        # Vérifier le token auprès de Google
+        # Si vous décommentez le config de client_id => id_token.verify_oauth2_token(token, google_requests.Request(), client_id='VOTRE_WEB_CLIENT_ID')
+        idinfo = id_token.verify_oauth2_token(
+            token, google_requests.Request()
+        )
+        
+        if idinfo['iss'] not in ['accounts.google.com', 'https://accounts.google.com']:
+            raise ValueError('Mauvais émetteur.')
+            
+        email = idinfo['email']
+        # Utiliser le nom complet ou le début de l'email comme nom d'utilisateur
+        username = idinfo.get('name', email.split('@')[0])
+        
+        user = User.query.filter_by(email=email).first()
+        
+        if not user:
+            # S'il y a conflit de nom d'utilisateur, on ajoute un nombre aléatoire
+            existing_username = User.query.filter_by(username=username).first()
+            if existing_username:
+                username = f"{username}_{random.randint(1000, 9999)}"
+
+            # Générer un mot de passe aléatoire (L'utilisateur se connectera toujours via Google)
+            random_password = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
+            hashed_password = bcrypt.generate_password_hash(random_password).decode('utf-8')
+            
+            user = User(
+                username=username,
+                email=email,
+                password_hash=hashed_password
+            )
+            db.session.add(user)
+            db.session.commit()
+            
+        access_token = create_access_token(identity=str(user.id))
+        
+        return jsonify({
+            'message': 'Connexion Google réussie',
+            'access_token': access_token,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email
+            }
+        }), 200
+
+    except ValueError as e:
+        return jsonify({'error': 'Token Google invalide ou expiré'}), 401
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500

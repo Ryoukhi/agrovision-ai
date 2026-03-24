@@ -8,6 +8,7 @@ interface AuthContextData {
   loading: boolean;
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (username: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  loginWithGoogle: (idToken: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
 }
 
@@ -75,6 +76,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const loginWithGoogle = async (idToken: string) => {
+    try {
+      const response = await api.post('/auth/google', { token: idToken });
+      
+      const { access_token, user: userData } = response.data;
+      
+      await AsyncStorage.setItem('access_token', access_token);
+      await AsyncStorage.setItem('user', JSON.stringify(userData));
+      
+      setUser(userData);
+      return { success: true };
+    } catch (error: any) {
+      return { 
+        success: false, 
+        error: error.response?.data?.error || 'Erreur d\'authentification avec Google' 
+      };
+    }
+  };
+
   const logout = async () => {
     await AsyncStorage.removeItem('access_token');
     await AsyncStorage.removeItem('user');
@@ -87,6 +107,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       loading, 
       login, 
       register, 
+      loginWithGoogle,
       logout 
     }}>
       {children}

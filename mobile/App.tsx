@@ -29,7 +29,7 @@ const Stack = createStackNavigator<RootStackParamList>();
 function AppNavigator() {
   const { user, loading } = useAuth();
   const { t } = useTranslation();
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const [isFirstLaunch, setIsFirstLaunch] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -52,7 +52,6 @@ function AppNavigator() {
             name="Home" 
             component={HomeScreen} 
             options={({ navigation }) => {
-              const { colors } = useTheme();
               return { 
                 title: 'AgroVision',
                 headerLeft: () => null,
