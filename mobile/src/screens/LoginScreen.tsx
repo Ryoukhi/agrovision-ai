@@ -21,6 +21,7 @@ import { useTheme } from '../context/ThemeContext';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
+import { makeRedirectUri } from 'expo-auth-session';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -40,12 +41,11 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const { t } = useTranslation();
   const { isDark, colors } = useTheme();
 
-  // Remplacez VOTRE_PSEUDO_EXPO par votre nom d'utilisateur sur expo.dev
-  const redirectUri = 'https://auth.expo.io/@krieger747/agrovision';
+  const redirectUri = 'https://auth.expo.io/@krieger747s-organization/agrovision';
 
   const [request, response, promptAsync] = Google.useAuthRequest({
     webClientId: '356099735088-p2a4aqc1p8q3a6fi8lco3kt9u8i3jd1d.apps.googleusercontent.com',
-    androidClientId: '356099735088-p2a4aqc1p8q3a6fi8lco3kt9u8i3jd1d.apps.googleusercontent.com',
+    androidClientId: '356099735088-ft76v9f8467nj2puq8lpmbgqt1qtutev.apps.googleusercontent.com',
     redirectUri: redirectUri,
   });
 
@@ -98,7 +98,8 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
 
           <TouchableOpacity 
             style={[styles.googleButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={() => promptAsync()}
+            // @ts-ignore : Required for Expo Go despite deprecation in newer SDKs
+            onPress={() => promptAsync({ useProxy: true })}
             disabled={!request || loading}>
             <Icon name="google" size={24} color="#DB4437" />
             <Text style={[styles.googleButtonText, { color: colors.text }]}>Continuer avec Google</Text>

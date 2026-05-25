@@ -410,7 +410,7 @@ def main():
     report = pipeline.run()
     
     if report:
-        print("\n📁 Fichiers générés:")
+        print("\n Fichiers générés:")
         print(f"   - Rapport JSON: data/outputs/rapport_*.json")
         print(f"   - Graphiques: data/outputs/*.png")
         print(f"   - Logs: data/logs/agrovision.log")
