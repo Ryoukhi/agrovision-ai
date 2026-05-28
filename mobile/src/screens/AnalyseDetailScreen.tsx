@@ -116,7 +116,7 @@ const formatSatelliteDate = (dateStr?: string) => {
   });
 };
 
-type RiskLevel = 'FAIBLE' | 'MODÉRÉ' | 'ÉLEVÉ' | 'CRITIQUE';
+type RiskLevel = 'FAIBLE' | 'MODÉRÉ' | 'ÉLEVÉ' | 'CRITIQUE' | 'INFO';
 
 const RISK_CONFIG: Record<RiskLevel, {
   color: string; bg: string;
@@ -127,6 +127,18 @@ const RISK_CONFIG: Record<RiskLevel, {
   'MODÉRÉ':   { color: '#E65100', bg: '#FFF3E0', iconName: 'alert-circle',       iconLib: 'Ionicons',                 label: 'Risque modéré' },
   'ÉLEVÉ':    { color: '#B71C1C', bg: '#FFEBEE', iconName: 'warning',            iconLib: 'Ionicons',                 label: 'Risque élevé'  },
   'CRITIQUE': { color: '#4A148C', bg: '#F3E5F5', iconName: 'alert-octagon',      iconLib: 'MaterialCommunityIcons',   label: 'CRITIQUE'      },
+  'INFO':     { color: '#546E7A', bg: '#ECEFF1', iconName: 'information-circle', iconLib: 'Ionicons',                 label: 'Information'   },
+};
+
+const ZONE_CONFIG: Record<string, { label: string; icon: string; color: string; bg: string }> = {
+  'vegetation_dense':       { label: 'Forêt / Végétation dense',       icon: 'forest',             color: '#1B5E20', bg: '#E8F5E9' },
+  'vegetation_moderee':     { label: 'Cultures / Végétation modérée',  icon: 'sprout',             color: '#2E7D32', bg: '#E8F5E9' },
+  'vegetation_clairsemee':  { label: 'Zone rurale / Végétation clairsemée', icon: 'grass',         color: '#827717', bg: '#F9FBE7' },
+  'urbain_sol_nu':          { label: 'Urbain / Sol nu',                icon: 'city-variant-outline', color: '#616161', bg: '#F5F5F5' },
+  'eau':                    { label: 'Plan d\'eau / Rivière',           icon: 'water',              color: '#1565C0', bg: '#E3F2FD' },
+  'desert':                 { label: 'Zone désertique / Aride',         icon: 'weather-sunny',      color: '#E65100', bg: '#FFF3E0' },
+  'zone_humide':            { label: 'Zone humide / Marais',            icon: 'nature',             color: '#00695C', bg: '#E0F2F1' },
+  'inconnu':                { label: 'Non classifié',                   icon: 'help-circle',        color: '#888',   bg: '#F5F5F5' },
 };
 
 const getRisk = (risque: string) =>
@@ -230,7 +242,6 @@ const AnalyseDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const { analyse } = route.params;
   const [sharing, setSharing] = useState(false);
   const [ndviImageUri, setNdviImageUri] = useState<string | null>(null);
-  const [multiImageUri, setMultiImageUri] = useState<string | null>(null);
   const [rgbImageUri, setRgbImageUri] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<{uri:string; title:string; subtitle:string} | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -252,15 +263,6 @@ const AnalyseDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           setNdviImageUri(ndviBase64);
         }
 
-        // Fetch Multi image
-        if (analyse.image_multi_path) {
-          const multiResponse = await api.get(`/analyses/${analyse.id}/image/multi`, {
-            responseType: 'arraybuffer',
-          });
-          const multiBase64 = `data:image/png;base64,${arrayBufferToBase64(multiResponse.data)}`;
-          setMultiImageUri(multiBase64);
-        }
-
         // Fetch RGB image
         if (analyse.image_rgb_path) {
           try {
@@ -280,7 +282,7 @@ const AnalyseDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     };
 
     fetchImages();
-  }, [analyse.id, analyse.image_ndvi_path, analyse.image_multi_path]);
+  }, [analyse.id, analyse.image_ndvi_path]);
 
   const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
     let binary = '';
@@ -374,6 +376,7 @@ const AnalyseDetailScreen: React.FC<Props> = ({ navigation, route }) => {
 `AgroVision AI — Rapport du ${formatDate(analyse.date_analyse)}
 
 RISQUE : ${analyse.risque}
+SOURCE IMAGE : ${analyse.source === 'radar' ? 'Radar Sentinel-1' : 'Optique Sentinel-2'}
 
 ETAT DU CHAMP :
 - Infection : ${analyse.taux_infection}% (${infectionLabel})
@@ -409,19 +412,15 @@ A FAIRE : ${analyse.action_recommandee}`,
           <Text style={[styles.riskTitle, { color: risk.color }]}>{risk.label}</Text>
           <Text style={styles.riskDate}>{formatDate(analyse.date_analyse)}</Text>
           <Text style={styles.imageDate}>🛰️ Image satellite du {formatSatelliteDate(analyse.date_image_satellite)}</Text>
+          {analyse.source && (
+            <View style={[styles.sourceBadge, { backgroundColor: analyse.source === 'radar' ? '#E3F2FD' : '#E8F5E9' }]}>
+              <Text style={[styles.sourceText, { color: analyse.source === 'radar' ? '#1565C0' : '#2E7D32' }]}>
+                {analyse.source === 'radar' ? 'Radar Sentinel-1' : 'Optique Sentinel-2'}
+              </Text>
+            </View>
+          )}
         </View>
       </View>
-
-      {analyse.zone_warning ? (
-        <View style={styles.warningCard}>
-          <Text style={styles.warningIcon}>⚠️</Text>
-          <Text style={styles.warningTitle}>Zone non agricole détectée</Text>
-          <Text style={styles.warningText}>
-            Cette zone est analysée comme {analyse.zone_type ?? 'inconnue'} (confiance {safeNum(analyse.zone_confidence, 2)}).
-            Les valeurs NDVI peuvent ne pas refléter une maladie de cultures.
-          </Text>
-        </View>
-      ) : null}
 
       {/* ── RECOMMANDATION ── */}
       <View style={[styles.recoCard, { borderColor: risk.color }]}>
@@ -431,6 +430,39 @@ A FAIRE : ${analyse.action_recommandee}`,
         </View>
         <Text style={styles.recoText}>{analyse.action_recommandee}</Text>
       </View>
+
+      {/* ── TYPE DE ZONE ── */}
+      {analyse.zone_type && analyse.zone_type !== 'simulation' && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <MaterialCommunityIcons name="map" size={20} color="#333" />
+            <Text style={styles.sectionTitle}>  Type de surface</Text>
+          </View>
+          <View style={[styles.zoneCard, { backgroundColor: (ZONE_CONFIG[analyse.zone_type] ?? ZONE_CONFIG['inconnu']).bg }]}>
+            <MaterialCommunityIcons
+              name={(ZONE_CONFIG[analyse.zone_type] ?? ZONE_CONFIG['inconnu']).icon as any}
+              size={28}
+              color={(ZONE_CONFIG[analyse.zone_type] ?? ZONE_CONFIG['inconnu']).color}
+            />
+            <View style={styles.zoneTextBlock}>
+              <Text style={[styles.zoneLabel, { color: (ZONE_CONFIG[analyse.zone_type] ?? ZONE_CONFIG['inconnu']).color }]}>
+                {(ZONE_CONFIG[analyse.zone_type] ?? ZONE_CONFIG['inconnu']).label}
+              </Text>
+              {analyse.zone_confidence != null && (
+                <Text style={styles.zoneConfidence}>
+                  Confiance : {(analyse.zone_confidence * 100).toFixed(0)}%
+                </Text>
+              )}
+            </View>
+          </View>
+          {analyse.zone_warning && (
+            <View style={styles.zoneWarning}>
+              <Ionicons name="alert-circle-outline" size={16} color="#E65100" />
+              <Text style={styles.zoneWarningText}>  {analyse.zone_warning}</Text>
+            </View>
+          )}
+        </View>
+      )}
 
       {/* ── ÉTAT DU CHAMP ── */}
       <View style={styles.section}>
@@ -556,13 +588,6 @@ A FAIRE : ${analyse.action_recommandee}`,
             onDownload={() => downloadImage(ndviImageUri, 'NDVI')}
           />
           <ImageCard
-            title="Multi-spectral"
-            subtitle="Vue combinée des bandes"
-            uri={multiImageUri}
-            onPress={() => multiImageUri && setPreviewImage({ uri: multiImageUri, title: 'Multi-spectral', subtitle: 'image multispectrale de la parcelle' })}
-            onDownload={() => downloadImage(multiImageUri, 'Multi-spectral')}
-          />
-          <ImageCard
             title="RGB Réel"
             subtitle="Image sans filtre"
             uri={rgbImageUri}
@@ -655,10 +680,8 @@ const styles = StyleSheet.create({
   riskTitle:     { fontSize: 22, fontWeight: '900', letterSpacing: 0.3 },
   riskDate:      { fontSize: 12, color: '#888', marginTop: 3 },
   imageDate:     { fontSize: 12, color: '#555', marginTop: 4, fontWeight: '600' },
-  warningCard:   { marginHorizontal: 16, marginBottom: 14, padding: 12, borderRadius: 12, backgroundColor: '#FFF4E5', borderLeftWidth: 4, borderLeftColor: '#E65100' },
-  warningIcon:   { fontSize: 20, marginBottom: 6 },
-  warningTitle:  { fontSize: 14, fontWeight: '800', color: '#BF360C', marginBottom: 4 },
-  warningText:   { fontSize: 12, color: '#5D4037', lineHeight: 18 },
+  sourceBadge:   { alignSelf: 'flex-start', marginTop: 6, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10 },
+  sourceText:    { fontSize: 11, fontWeight: '700' },
 
   recoCard: {
     marginHorizontal: 16, marginBottom: 16, padding: 18,
@@ -710,6 +733,20 @@ const styles = StyleSheet.create({
   predLabel:     { fontSize: 12, color: '#777', textAlign: 'center', marginBottom: 4 },
   predValue:     { fontSize: 26, fontWeight: '800', color: '#333' },
   predDivider:   { width: 1, height: 50, backgroundColor: '#ddd' },
+
+  zoneCard: {
+    flexDirection: 'row', alignItems: 'center',
+    borderRadius: 14, padding: 14, marginBottom: 8,
+  },
+  zoneTextBlock: { marginLeft: 14, flex: 1 },
+  zoneLabel: { fontSize: 15, fontWeight: '700' },
+  zoneConfidence: { fontSize: 12, color: '#666', marginTop: 2 },
+  zoneWarning: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#FFF3E0', borderRadius: 8, padding: 10,
+    borderLeftWidth: 3, borderLeftColor: '#FF9800',
+  },
+  zoneWarningText: { fontSize: 12, color: '#E65100', flex: 1 },
 
   imagesRow: { paddingRight: 16 },
 

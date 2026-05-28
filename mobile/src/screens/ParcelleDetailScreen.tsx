@@ -185,7 +185,12 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
       const response = await api.get(`/analyses/${analyse.id}`);
       navigation.navigate('AnalyseDetail', { analyse: response.data });
     } catch (error: any) {
-      Alert.alert('Erreur', error.response?.data?.error || 'Impossible de charger l’analyse');
+      const msg = error.response?.data?.error || '';
+      if (msg.includes('satellite') || msg.includes('image') || msg.includes('qualité')) {
+        Alert.alert('Analyse indisponible', 'Les données de cette analyse ne sont plus accessibles. Veuillez lancer une nouvelle analyse.');
+      } else {
+        Alert.alert('Erreur', msg || 'Impossible de charger l\'analyse');
+      }
     } finally {
       setLoadingAnalyseId(null);
     }
@@ -255,7 +260,12 @@ const ParcelleDetailScreen: React.FC<Props> = ({ navigation, route }) => {
               Alert.alert('Succès', 'Analyse en cours. Elle apparaîtra bientôt dans la liste.');
               loadAnalyses();
             } catch (error: any) {
-              Alert.alert('Erreur', 'Échec du lancement de l’analyse');
+              const msg = error.response?.data?.error || error.message || '';
+              if (msg.includes('satellite') || msg.includes('image') || msg.includes('qualité') || msg.includes('couverture')) {
+                Alert.alert('Analyse impossible', 'Aucune image satellite récente de qualité suffisante pour cette parcelle. Veuillez réessayer dans quelques jours.');
+              } else {
+                Alert.alert('Erreur', 'Échec du lancement de l’analyse. Vérifiez les coordonnées de la parcelle et réessayez.');
+              }
             } finally {
               setAnalyzing(false);
             }

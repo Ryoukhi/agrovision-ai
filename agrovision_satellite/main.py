@@ -88,94 +88,74 @@ class AgroVisionPipeline:
     
     def run_satellite_analysis(self):
         """
-        Étape 1: Analyse satellite réelle
+        Étape 1: Analyse satellite réelle (fusion S1/S2 + Isolation Forest)
         """
         logger.info("\n" + "="*60)
-        logger.info("🛰️  ÉTAPE 1 - ANALYSE SATELLITE RÉELLE")
+        logger.info("🛰️  ÉTAPE 1 - ANALYSE SATELLITE (multi-indices + Isolation Forest)")
         logger.info("="*60)
         
         # Récupérer les coordonnées de la parcelle
         coords = self.config['parcelle']['coordinates']
         logger.info(f"📍 Parcelle: {coords}")
         
-        # Récupérer la période d'analyse de la config
+        # Période d'analyse
         periode_jours = self.config.get('analyse', {}).get('periode_jours', 60)
         date_fin_config = self.config.get('analyse', {}).get('date_fin', 'auto')
         
-        # Définir la date de fin
         if date_fin_config == 'auto':
             date_fin = datetime.now().strftime('%Y-%m-%d')
         else:
             date_fin = date_fin_config
         
-        # Calculer la date de début
         date_debut = (datetime.strptime(date_fin, '%Y-%m-%d') - timedelta(days=periode_jours)).strftime('%Y-%m-%d')
-        
         logger.info(f"📅 Période: {date_debut} à {date_fin} ({periode_jours} jours)")
         
         try:
-            # Récupérer l'image NDVI réelle avec tous les indices
-            ndvi, all_indices, date_image, image = self.satellite.get_ndvi_image(
-                coords,
-                date_debut,
-                date_fin,
-                max_cloud=20
+            # --- Nouvelle méthode: récupération des indices (optique ou radar) ---
+            indices_dict, source, date_image, roi_eroded = self.satellite.get_multi_index_image(
+                coords, date_debut, date_fin, max_cloud=20
             )
             
-            logger.info(f"✅ Image du {date_image} récupérée")
-            logger.info(f"   Dimensions: {ndvi.shape}")
-            logger.info(f"   NDVI min: {ndvi.min():.2f}, max: {ndvi.max():.2f}, moy: {ndvi.mean():.2f}")
+            logger.info(f"✅ Source: {source.upper()}, Image du {date_image}")
+            for name, arr in indices_dict.items():
+                logger.info(f"   {name}: shape={arr.shape}, min={arr.min():.3f}, max={arr.max():.3f}, moy={arr.mean():.3f}")
             
-            # Stocker tous les indices pour usage ultérieur
-            self.ndvi = ndvi
-            self.all_indices = all_indices
+            # --- Détection des anomalies par Isolation Forest ---
+            results = self.satellite.detect_stress_isolation_forest(indices_dict, contamination=0.1)
+            
+            # Stocker les résultats dans les attributs de l'instance
             self.image_date = date_image
-            
-            # Détecter les zones malades (seuil depuis config)
-            seuil = self.config.get('detection', {}).get('ndvi_seuil', 0.35)
-            results = self.satellite.calculate_infected_area(ndvi, seuil=seuil)
-            
-            # Sauvegarder la visualisation NDVI
-            save_path = self.output_dir / f"satellite_{date_image}.png"
-            self.satellite.plot_ndvi(
-                ndvi,
-                results['masque'],
-                f"Analyse Sentinel-2 du {date_image}",
-                save_path=save_path
-            )
-            
-            # Sauvegarder la visualisation multi-indices (optionnel)
-            multi_save_path = self.output_dir / f"multi_indices_{date_image}.png"
-            self.satellite.plot_all_indices(
-                all_indices,
-                results['masque'],
-                save_path=multi_save_path
-            )
-            
-            # Récupérer les résultats
-            self.infected_pixels = results['pixels_malades']
+            self.infected_pixels = results['pixels_stress']
             self.total_pixels = results['pixels_total']
-            self.infected_percent = results['pourcentage_pixels']
-            self.infected_area = results['surface_infectee_ha']
+            self.infected_percent = results['pourcentage_stress']
+            self.infected_area = results['surface_stress_ha']
             self.total_area = results['surface_totale_ha']
             
-            logger.info(f"\n📊 RÉSULTATS ANALYSE:")
-            logger.info(f"   Date image: {date_image}")
-            logger.info(f"   Pixels analysés: {self.total_pixels}")
-            logger.info(f"   Pixels malades: {self.infected_pixels}")
-            logger.info(f"   Taux d'infection: {self.infected_percent:.1f}%")
-            logger.info(f"   Surface parcelle: {self.total_area:.2f} ha")
-            logger.info(f"   Surface infectée: {self.infected_area:.3f} ha")
-            
-            # Calculer les plants infectés (densité paramétrable)
+            # Calcul des plants infectés (densité depuis config)
             plants_per_ha = self.config.get('parcelle', {}).get('plants_per_ha', 10000)
             self.infected_plants = int(self.infected_area * plants_per_ha)
             
-            logger.info(f"   Plants infectés: {self.infected_plants:,}")
+            # Sauvegarde de la carte de stress
+            save_path = self.output_dir / f"stress_map_{date_image}.png"
+            self.satellite.plot_stress_map(indices_dict, results['masque_stress'], save_path=save_path)
+            
+            # (Optionnel) Sauvegarder également une visualisation multi-indices
+            # Pour simplifier, on peut commenter ou supprimer l'appel à plot_all_indices
+            # self.satellite.plot_all_indices(...)  # cette méthode n'existe plus dans la nouvelle version
+            
+            logger.info(f"\n📊 RÉSULTATS ANALYSE:")
+            logger.info(f"   Source: {source}")
+            logger.info(f"   Date image: {date_image}")
+            logger.info(f"   Pixels analysés: {self.total_pixels}")
+            logger.info(f"   Pixels en stress: {self.infected_pixels}")
+            logger.info(f"   Taux de stress: {self.infected_percent:.2f}%")
+            logger.info(f"   Surface parcelle: {self.total_area:.2f} ha")
+            logger.info(f"   Surface stressée: {self.infected_area:.3f} ha")
+            logger.info(f"   Plants stressés: {self.infected_plants:,}")
             
             return {
-                'ndvi': ndvi,
-                'all_indices': all_indices,
+                'indices': indices_dict,
+                'source': source,
                 'infected_pixels': self.infected_pixels,
                 'infected_percent': self.infected_percent,
                 'infected_area': self.infected_area,
@@ -184,15 +164,15 @@ class AgroVisionPipeline:
             }
             
         except Exception as e:
-            logger.error(f"❌ Erreur analyse satellite: {e}")
+            logger.error(f"❌ Erreur analyse satellite réelle: {e}")
             logger.warning("⚠️ Utilisation du simulateur en secours...")
             
-            # Fallback vers le simulateur en cas d'erreur
+            # Fallback vers le simulateur (adapté pour éviter les erreurs de méthodes)
             from modules.satellite_simulator import SatelliteSimulator
             sim = SatelliteSimulator(self.config)
             ndvi = sim.generate_ndvi_image(avec_maladies=True)
             
-            # Simuler des résultats
+            # Simuler des résultats (compatible avec l'ancienne méthode)
             results = sim.calculate_infected_area(ndvi, seuil=0.35)
             
             self.image_date = "simulation"
@@ -205,6 +185,17 @@ class AgroVisionPipeline:
             plants_per_ha = self.config.get('parcelle', {}).get('plants_per_ha', 10000)
             self.infected_plants = int(self.infected_area * plants_per_ha)
             
+            # Essayer de générer un graphique simple avec matplotlib (sans utiliser les méthodes du simulateur)
+            try:
+                plt.figure(figsize=(10, 8))
+                plt.imshow(ndvi, cmap='RdYlGn', vmin=-0.5, vmax=1)
+                plt.colorbar(label='NDVI')
+                plt.title(f"Simulation NDVI (date: {self.image_date})")
+                plt.savefig(self.output_dir / f"satellite_simulation_{datetime.now().strftime('%Y%m%d')}.png")
+                plt.close()
+            except Exception as plot_err:
+                logger.warning(f"Impossible de générer le graphique de simulation: {plot_err}")
+            
             return {
                 'ndvi': ndvi,
                 'infected_percent': self.infected_percent,
@@ -212,7 +203,8 @@ class AgroVisionPipeline:
                 'infected_plants': self.infected_plants,
                 'date_image': self.image_date
             }
-    
+
+
     def run_weather_analysis(self):
         """
         Étape 2: Analyse météo

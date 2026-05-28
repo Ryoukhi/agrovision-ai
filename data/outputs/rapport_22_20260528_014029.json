@@ -1,0 +1,21 @@
+{
+  "date_analyse": "2026-05-28T01:40:29.823687",
+  "date_image_satellite": "2026-05-25",
+  "taux_infection": 10.0,
+  "surface_infectee_ha": 0.44,
+  "plants_infectes": 4380,
+  "temperature_moyenne": 27.0,
+  "humidite_moyenne": 84,
+  "vent_moyen": 1.9,
+  "risque": "CRITIQUE",
+  "evolution_7j": 107.3,
+  "plants_infectes_7j": 9080,
+  "action_recommandee": "INTERVENTION URGENTE - Traitement imm\u00e9diat et quarantaine",
+  "source": "optique",
+  "zone_type": "desert",
+  "zone_warning": "Sol tr\u00e8s aride \u2014 irrigation n\u00e9cessaire",
+  "zone_confidence": 1.0,
+  "image_ndvi_path": "E:\\EADL\\EADL\\PROJET TUTOR\u00c9\\agrovision-ai\\data\\outputs\\analyse_22_ndvi.png",
+  "image_multi_path": null,
+  "image_rgb_path": "E:\\EADL\\EADL\\PROJET TUTOR\u00c9\\agrovision-ai\\data\\outputs\\analyse_22_rgb.png"
+}

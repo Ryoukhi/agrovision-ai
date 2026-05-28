@@ -46,9 +46,8 @@ def get_analyses_parcelle(parcelle_id):
         'evolution_7j': a.evolution_7j,
         'plants_infectes_7j': a.plants_infectes_7j,
         'action_recommandee': a.action_recommandee,
-        'zone_type': a.zone_type,
-        'zone_warning': a.zone_warning,
-        'zone_confidence': a.zone_confidence,
+        'zone_type': getattr(a, 'zone_type', 'unknown'),
+        'zone_warning': getattr(a, 'zone_warning', None),
     } for a in analyses]), 200
 
 @analyses_bp.route('/<int:analyse_id>', methods=['GET'])
@@ -83,16 +82,11 @@ def get_analyse(analyse_id):
         'image_ndvi_path': analyse.image_ndvi_path,
         'image_multi_path': analyse.image_multi_path,
         'parcelle_id': analyse.parcelle_id,
-        'image_rgb_path': getattr(analyse, 'image_rgb_path', None)
+        'image_rgb_path': getattr(analyse, 'image_rgb_path', None),
+        'zone_type': getattr(analyse, 'zone_type', 'unknown'),
+        'zone_warning': getattr(analyse, 'zone_warning', None),
+        'zone_confidence': getattr(analyse, 'zone_confidence', 0.0),
     }
-    insp = inspect(db.engine)
-    cols = [c['name'] for c in insp.get_columns('analyses')]
-    if 'zone_type' in cols:
-        result['zone_type'] = analyse.zone_type
-    if 'zone_warning' in cols:
-        result['zone_warning'] = analyse.zone_warning
-    if 'zone_confidence' in cols:
-        result['zone_confidence'] = analyse.zone_confidence
     return jsonify(result), 200
 
 @analyses_bp.route('/parcelle/<int:parcelle_id>/run', methods=['POST'])
@@ -124,16 +118,10 @@ def run_analyse(parcelle_id):
             'image_ndvi_path': result.get('image_ndvi_path'),
             'image_multi_path': result.get('image_multi_path'),
             'image_rgb_path': result.get('image_rgb_path'),
+            'zone_type': result.get('zone_type', 'unknown'),
+            'zone_warning': result.get('zone_warning'),
+            'zone_confidence': result.get('zone_confidence', 0.0),
         }
-        insp = inspect(db.engine)
-        cols = [c['name'] for c in insp.get_columns('analyses')]
-        if 'zone_type' in cols:
-            analyse_kwargs['zone_type'] = result.get('zone_type', 'unknown')
-        if 'zone_warning' in cols:
-            analyse_kwargs['zone_warning'] = result.get('zone_warning')
-        if 'zone_confidence' in cols:
-            analyse_kwargs['zone_confidence'] = result.get('zone_confidence', 0.0)
-
         nouvelle_analyse = Analyse(**analyse_kwargs)
         db.session.add(nouvelle_analyse)
         db.session.commit()

@@ -33,9 +33,14 @@ export interface Analyse {
   evolution_7j: number;
   plants_infectes_7j: number;
   action_recommandee: string;
+  source?: string;
+  zone_type?: string;
+  zone_warning?: string;
+  zone_confidence?: number;
   rapport_json_path?: string;
   image_ndvi_path?: string;
   image_multi_path?: string;
+  image_rgb_path?: string;
   parcelle_id: number;
   created_at: string;
 }

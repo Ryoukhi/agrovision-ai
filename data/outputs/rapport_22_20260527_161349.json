@@ -1,0 +1,18 @@
+{
+  "date_analyse": "2026-05-27T16:13:49.949644",
+  "date_image_satellite": "composite_optique",
+  "taux_infection": 0.0,
+  "surface_infectee_ha": 0.0,
+  "plants_infectes": 0,
+  "temperature_moyenne": 26.7,
+  "humidite_moyenne": 85,
+  "vent_moyen": 1.6,
+  "risque": "FAIBLE",
+  "evolution_7j": 0.0,
+  "plants_infectes_7j": 0,
+  "action_recommandee": "Surveillance normale - Pas d'action urgente",
+  "source": "optique",
+  "image_ndvi_path": "E:\\EADL\\EADL\\PROJET TUTOR\u00c9\\agrovision-ai\\data\\outputs\\analyse_22_ndvi.png",
+  "image_multi_path": null,
+  "image_rgb_path": null
+}

@@ -3,18 +3,14 @@
 satellite:
   source: "COPERNICUS/S2_HARMONIZED"
   project_id: "coursmining-225016"
-  cloud_threshold: 20
+  max_cloud_percent: 20
+  buffer_meters: 10
   start_date: "2026-01-01"
   end_date: "2026-03-01"
-  indices:
-    - NDVI
-    - EVI
-    - SAVI
 
 detection:
+  contamination: 0.1
   ndvi_seuil: 0.35
-  evi_seuil: 0.2
-  savi_seuil: 0.25
 
 parcelle:
   nom: "Champ de test"

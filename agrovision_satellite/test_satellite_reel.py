@@ -34,37 +34,34 @@ def main():
     coords = config['parcelle']['coordinates']
     print(f"\n📍 Parcelle: {coords}")
     
-    # 4. Récupérer une image
+    # 4. Récupérer les indices
     print("\n📡 Récupération image satellite...")
     try:
-        ndvi, all_indices, date, image = sat.get_ndvi_image(
+        indices_dict, source, date, roi = sat.get_multi_index_image(
             coords,
             '2026-01-01',
             '2026-03-01',
             max_cloud=20
         )
-        print(f"✅ Image du {date} récupérée")
-        print(f"   Dimensions: {ndvi.shape}")
-        print(f"   NDVI min: {ndvi.min():.2f}, max: {ndvi.max():.2f}")
+        print(f"✅ Image du {date} récupérée (source: {source})")
+        for name, arr in indices_dict.items():
+            print(f"   {name}: {arr.shape}, min={arr.min():.2f}, max={arr.max():.2f}")
         
-        # 5. Analyser
-        print("\n🔍 Analyse des zones malades...")
-        resultats = sat.calculate_infected_area(ndvi)  # Utilise le seuil de config (0.35)
+        # 5. Détection des anomalies par Isolation Forest
+        print("\n🔍 Détection des zones de stress...")
+        resultats = sat.detect_stress_isolation_forest(indices_dict)
         
         # 6. Afficher
         print("\n📊 RÉSULTATS:")
         print(f"   Pixels analysés: {resultats['pixels_total']}")
-        print(f"   Pixels malades: {resultats['pixels_malades']}")
-        print(f"   Taux d'infection (pixels): {resultats['pourcentage_pixels']:.1f}%")
-        print(f"   Surface parcelle: {resultats['surface_totale_ha']} ha")
-        print(f"   Surface infectée réelle: {resultats['surface_infectee_ha']:.3f} ha")
-        print(f"   Taux d'infection réel: {resultats['pourcentage_reel']:.1f}%")
+        print(f"   Pixels stressés: {resultats['pixels_stress']}")
+        print(f"   Taux de stress: {resultats['pourcentage_stress']:.1f}%")
+        print(f"   Surface stressée: {resultats['surface_stress_ha']:.3f} ha")
         
-        # 7. Sauvegarder le graphique
-        sat.plot_ndvi(
-            ndvi,
-            resultats['masque'],
-            f"Image Sentinel-2 du {date}",
+        # 7. Sauvegarder la carte de stress
+        sat.plot_stress_map(
+            indices_dict,
+            resultats['masque_stress'],
             save_path="data/outputs/satellite_reel_test.png"
         )
         

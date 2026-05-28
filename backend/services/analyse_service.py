@@ -86,9 +86,11 @@ class AnalyseService:
             'evolution_7j': round(random.uniform(-10, 30), 1),
             'plants_infectes_7j': int(plants_infectes * (1 + random.uniform(-0.1, 0.3))),
             'action_recommandee': "Surveillance normale" if random.random() > 0.5 else "Intervention recommandée",
-            'zone_type': 'unknown',
+            'source': 'simulation',
+            'zone_type': random.choice(['vegetation_moderee', 'vegetation_clairsemee', 'eau', 'urbain_sol_nu']),
             'zone_warning': None,
-            'zone_confidence': 0.0,
+            'zone_confidence': 0.5,
             'image_ndvi_path': None,
             'image_multi_path': None,
+            'image_rgb_path': None,
         }

@@ -136,7 +136,7 @@ class SatelliteSimulator:
         
         return resultats
     
-    def plot_ndvi(self, ndvi, masque=None, titre="Image NDVI"):
+    def plot_ndvi(self, ndvi, masque=None, titre="Image NDVI", save_path=None, show=False):
         """
         Affiche l'image NDVI et optionnellement le masque
         
@@ -144,6 +144,8 @@ class SatelliteSimulator:
             ndvi: image NDVI
             masque: masque des zones malades (optionnel)
             titre: titre du graphique
+            save_path: chemin de sauvegarde (optionnel)
+            show: afficher la figure interactivement
         """
         fig, axes = plt.subplots(1, 2 if masque is not None else 1, figsize=(12, 5))
         
@@ -171,15 +173,18 @@ class SatelliteSimulator:
         
         plt.tight_layout()
         
-        # Sauvegarde
-        output_path = Path(self.config['outputs']['save_path'])
-        output_path.mkdir(parents=True, exist_ok=True)
-        plt.savefig(output_path / 'simulation_ndvi.png', dpi=150)
+        if save_path:
+            Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(save_path, dpi=150)
+            logger.info(f"✅ Graphique sauvegardé : {save_path}")
+        else:
+            output_path = Path(self.config['outputs']['save_path'])
+            output_path.mkdir(parents=True, exist_ok=True)
+            plt.savefig(output_path / 'simulation_ndvi.png', dpi=150)
+            logger.info(f"✅ Graphique sauvegardé dans {output_path / 'simulation_ndvi.png'}")
         if show:
             plt.show()
         plt.close(fig)
-        
-        logger.info(f"✅ Graphique sauvegardé dans {output_path / 'simulation_ndvi.png'}")
 
 # Pour tester le module tout seul
 if __name__ == "__main__":

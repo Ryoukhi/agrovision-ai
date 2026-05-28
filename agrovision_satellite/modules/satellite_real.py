@@ -1,6 +1,10 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-Module d'acquisition d'images satellite réelles (Sentinel-2)
-Version améliorée avec multiples indices et seuil configurable
+Module d'acquisition et d'analyse satellite pour AgroVision
+Basé sur l'article : fusion Sentinel-1/Sentinel-2 + Isolation Forest + buffer spatial
+Auteur: Stephane Deutou
+Date: Mars 2026
 """
 
 import ee
@@ -11,655 +15,558 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from pathlib import Path
-import math  # ← AJOUTÉ pour les calculs de redimensionnement
+import math
 from scipy.ndimage import zoom
+from sklearn.ensemble import IsolationForest
+import pyproj
+from shapely.geometry import Polygon
+from shapely.ops import transform
 
 logger = logging.getLogger(__name__)
 
 class RealSatellite:
     """
-    Acquisition et analyse d'images Sentinel-2 réelles
+    Acquisition et analyse d'images satellite réelles (Sentinel-1/2) avec détection non supervisée
     """
-    
+
     def __init__(self, config):
         """
-        Initialise la connexion à Google Earth Engine
+        Initialise la connexion à Google Earth Engine et charge la configuration
+
+        Args:
+            config: dictionnaire de configuration (contenant 'satellite', 'parcelle', 'detection')
         """
         self.config = config
         self._initialize_ee()
-        logger.info("✅ Module satellite réel initialisé")
-    
+        # Paramètres par défaut depuis la config
+        self.buffer_meters = config.get('satellite', {}).get('buffer_meters', 10)
+        self.contamination = config.get('detection', {}).get('contamination', 0.1)
+        self.max_cloud = config.get('satellite', {}).get('max_cloud_percent', 20)
+        self.surface_totale_ha = config['parcelle']['surface_ha']
+        print(f"✅ Module satellite réel : buffer={self.buffer_meters}m, contamination={self.contamination}, max_cloud={self.max_cloud}%, surface_config={self.surface_totale_ha}ha")
+
     def _initialize_ee(self):
-        """Initialise Google Earth Engine avec le projet spécifié"""
+        """Initialise Google Earth Engine avec le projet spécifié dans la config"""
         try:
-            # Ton ID de projet depuis la config
             project_id = self.config.get('satellite', {}).get('project_id', '')
-            
-            # Initialise avec le projet
-            ee.Initialize(project=project_id)
-            logger.info(f"✅ Google Earth Engine connecté avec projet {project_id}")
-            
+            if not project_id:
+                # Tentative d'initialisation sans projet (déprécié mais parfois fonctionne)
+                ee.Initialize()
+                logger.warning("⚠️ Initialisation GEE sans project_id explicite")
+            else:
+                ee.Initialize(project=project_id)
+                logger.info(f"✅ Google Earth Engine connecté avec le projet {project_id}")
+            # Test simple pour valider l'accès
+            test_point = ee.Geometry.Point([12.55, 4.55])
+            test_col = ee.ImageCollection('COPERNICUS/S2_HARMONIZED').filterBounds(test_point).limit(1)
+            count = test_col.size().getInfo()
+            logger.info(f"✅ Test GEE réussi : {count} image(s) trouvée(s) pour un point test")
         except Exception as e:
-            logger.error(f"❌ Erreur EE: {e}")
-            logger.info("🔑 Vérifie l'enregistrement du projet sur https://code.earthengine.google.com/register")
+            logger.error(f"❌ Erreur d'initialisation Earth Engine: {e}")
             raise e
 
-    def normalize_evi(self, evi_array):
+    def buffer_negatif(self, coords):
         """
-        Normalise les valeurs EVI aberrantes
-        
-        EVI théorique est entre -1 et 1, mais peut dépasser à cause de :
-        - Divisions par zéro
-        - Pixels nuageux
-        - Sol très brillant
-        
-        Args:
-            evi_array: tableau numpy EVI brut
-            
-        Returns:
-            evi_normalise: tableau numpy EVI normalisé
-        """
-        logger.info(f"📊 EVI avant normalisation: min={evi_array.min():.2f}, max={evi_array.max():.2f}, moy={evi_array.mean():.2f}")
-        
-        # 1. Remplacer les infinis par NaN
-        evi_array = np.where(np.isinf(evi_array), np.nan, evi_array)
-        
-        # 2. Calculer les percentiles pour éviter les extrêmes
-        p1 = np.nanpercentile(evi_array, 1)  # 1er percentile
-        p99 = np.nanpercentile(evi_array, 99)  # 99e percentile
-        
-        logger.info(f"   Percentiles: 1%={p1:.2f}, 99%={p99:.2f}")
-        
-        # 3. Clipper aux percentiles (enlever les 1% extrêmes de chaque côté)
-        evi_clip = np.clip(evi_array, p1, p99)
-        
-        # 4. Normaliser entre -1 et 1 (théorique)
-        # Formule: (x - min) / (max - min) * 2 - 1
-        min_val = np.nanmin(evi_clip)
-        max_val = np.nanmax(evi_clip)
-        
-        if max_val > min_val:  # Éviter la division par zéro
-            evi_normalise = 2 * (evi_clip - min_val) / (max_val - min_val) - 1
-        else:
-            evi_normalise = evi_clip
-        
-        # 5. Remplacer les NaN restants par 0
-        evi_normalise = np.nan_to_num(evi_normalise, nan=0.0)
-        
-        logger.info(f"📊 EVI après normalisation: min={evi_normalise.min():.2f}, max={evi_normalise.max():.2f}, moy={evi_normalise.mean():.2f}")
-        
-        return evi_normalise
+        Applique un buffer négatif (érosion) au polygone de la parcelle pour éliminer les bordures.
 
-    def compute_all_indices(self, image):
-        """
-        Calcule plusieurs indices de végétation
-        
         Args:
-            image: Image Sentinel-2
-        
+            coords: liste de 4 éléments [lon_min, lat_min, lon_max, lat_max] ou un polygone GeoJSON
+
         Returns:
-            dict: Dictionnaire contenant NDVI, EVI, SAVI
+            ee.Geometry.Polygon érodé (ou le polygone original si trop petit)
         """
-        indices = {}
-        
-        # NDVI (Normalized Difference Vegetation Index)
-        # Formule: (NIR - RED) / (NIR + RED)
-        indices['NDVI'] = image.normalizedDifference(['B8', 'B4']).rename('NDVI')
-        
-        # EVI (Enhanced Vegetation Index)
-        # Formule: 2.5 * ((NIR - RED) / (NIR + 6*RED - 7.5*BLUE + 1))
-        evi = image.expression(
-            '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))', {
-                'NIR': image.select('B8'),
-                'RED': image.select('B4'),
-                'BLUE': image.select('B2')
-            }).rename('EVI')
-        indices['EVI'] = evi
-        
-        # SAVI (Soil Adjusted Vegetation Index)
-        # Formule: ((NIR - RED) / (NIR + RED + 0.5)) * 1.5
-        savi = image.expression(
-            '((NIR - RED) / (NIR + RED + 0.5)) * 1.5', {
-                'NIR': image.select('B8'),
-                'RED': image.select('B4')
-            }).rename('SAVI')
-        indices['SAVI'] = savi
-        
-        logger.info(f"✅ Indices calculés: {', '.join(indices.keys())}")
-        return indices
-    
-    def get_ndvi_image(self, coords, date_debut, date_fin, max_cloud=20):
+        try:
+            # Convertir les coordonnées en polygone Shapely
+            if len(coords) == 4:
+                polygon = Polygon([
+                    (coords[0], coords[1]),
+                    (coords[2], coords[1]),
+                    (coords[2], coords[3]),
+                    (coords[0], coords[3])
+                ])
+            else:
+                # Si c'est déjà une liste de paires (GeoJSON)
+                polygon = Polygon(coords)
+
+            # Projeter en UTM zone 32N (Cameroun) pour travailler en mètres
+            wgs84 = pyproj.CRS('EPSG:4326')
+            utm32 = pyproj.CRS('EPSG:32632')
+            project_to_utm = pyproj.Transformer.from_crs(wgs84, utm32, always_xy=True).transform
+            project_to_wgs84 = pyproj.Transformer.from_crs(utm32, wgs84, always_xy=True).transform
+
+            polygon_utm = transform(project_to_utm, polygon)
+            if polygon_utm.is_empty or polygon_utm.area <= 0:
+                logger.warning("⚠️ Polygone UTM invalide, utilisation du polygone original")
+                return ee.Geometry.Rectangle(coords)
+
+            # Appliquer le buffer négatif
+            eroded = polygon_utm.buffer(-self.buffer_meters)
+            if eroded.is_empty or eroded.area <= 0:
+                # Si trop petit, on garde le centroïde étendu de 5 mètres
+                logger.warning(f"⚠️ Buffer négatif {self.buffer_meters}m vide, utilisation du centroïde")
+                centroid = polygon_utm.centroid.buffer(5)
+                eroded = centroid
+
+            # Reprojeter en WGS84
+            eroded_wgs84 = transform(project_to_wgs84, eroded)
+            coords_list = list(eroded_wgs84.exterior.coords)
+            logger.info(f"✅ Buffer négatif appliqué : {self.buffer_meters}m, surface résultante {eroded.area:.0f} m²")
+            return ee.Geometry.Polygon(coords_list)
+
+        except Exception as e:
+            logger.error(f"❌ Erreur lors du buffer négatif: {e}")
+            # Fallback: utiliser la région d'origine
+            return ee.Geometry.Rectangle(coords)
+
+    def get_multi_index_image(self, coords, date_debut, date_fin, max_cloud=None):
         """
-        Récupère une image NDVI réelle pour une parcelle
-        
+        Extrait une matrice multi-indices (optique ou radar) selon la disponibilité.
+
         Args:
-            coords: [long_min, lat_min, long_max, lat_max]
-            date_debut: '2026-01-01'
-            date_fin: '2026-03-01'
-            max_cloud: % maximum de nuages
-        
+            coords: [lon_min, lat_min, lon_max, lat_max]
+            date_debut: 'YYYY-MM-DD'
+            date_fin: 'YYYY-MM-DD'
+            max_cloud: pourcentage maximum de nuages (par défaut self.max_cloud)
+
         Returns:
-            ndvi: tableau numpy NDVI
-            all_indices: dict de tous les indices calculés
-            date_image: date de l'image
+            indices_dict: dict des tableaux numpy (clés: 'EVI','GNDVI','NDWI' ou 'ratio_VH_VV')
+            source: 'optique' ou 'radar'
+            date_image: date de l'image (ou 'composite')
+            roi_used: geometry Earth Engine utilisée (érodée)
         """
-        logger.info(f"🔍 Recherche d'images pour la zone {coords}")
-        logger.info(f"📅 Période: {date_debut} à {date_fin}")
-        
-        # Créer la région d'intérêt
-        roi = ee.Geometry.Rectangle(coords)
-        
-        # Récupérer les images Sentinel-2
-        collection = ee.ImageCollection('COPERNICUS/S2_HARMONIZED') \
+        if max_cloud is None:
+            max_cloud = self.max_cloud
+
+        # Appliquer le buffer négatif
+        roi = self.buffer_negatif(coords)
+        logger.info(f"🔍 Recherche d'images pour la zone (buffer appliqué)")
+
+        # --- Tentative optique Sentinel-2 ---
+        s2_collection = ee.ImageCollection('COPERNICUS/S2_HARMONIZED') \
             .filterDate(date_debut, date_fin) \
             .filterBounds(roi) \
             .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', max_cloud))
-        
-        # Compter les images
-        count = collection.size().getInfo()
-        logger.info(f"📸 {count} images trouvées")
-        
-        if count == 0:
-            # Élargir la recherche
-            logger.warning("⚠️ Aucune image trouvée, élargissement de la période...")
-            new_date_debut = (datetime.strptime(date_debut, '%Y-%m-%d') - timedelta(days=60)).strftime('%Y-%m-%d')
-            collection = ee.ImageCollection('COPERNICUS/S2_HARMONIZED') \
-                .filterDate(new_date_debut, date_fin) \
+
+        s2_count = s2_collection.size().getInfo()
+        logger.info(f"📸 Sentinel-2 : {s2_count} image(s) avec nuages < {max_cloud}%")
+
+        if s2_count > 0:
+            # Utiliser un composite médian (inclure B11 pour NDBI)
+            median_s2 = s2_collection.select(['B2', 'B3', 'B4', 'B8', 'B11']).median()
+
+            # Date de la plus récente image utilisée dans le composite
+            newest = s2_collection.sort('system:time_start', False).first()
+            date_image = ee.Date(newest.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+            print(f"   📅 Dernière image optique : {date_image}")
+
+            logger.info(f"🛰️ Composite médian Sentinel-2 (dernière image : {date_image}, {s2_count} images)")
+
+            # Calcul des indices
+            evi = median_s2.expression(
+                '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))',
+                {
+                    'NIR': median_s2.select('B8'),
+                    'RED': median_s2.select('B4'),
+                    'BLUE': median_s2.select('B2')
+                }
+            ).rename('EVI')
+
+            gndvi = median_s2.normalizedDifference(['B8', 'B3']).rename('GNDVI')
+            ndwi = median_s2.normalizedDifference(['B3', 'B8']).rename('NDWI')
+            ndbi = median_s2.normalizedDifference(['B11', 'B8']).rename('NDBI')
+
+            indices = {'EVI': evi, 'GNDVI': gndvi, 'NDWI': ndwi, 'NDBI': ndbi}
+            source = 'optique'
+
+        else:
+            # --- Fallback radar Sentinel-1 ---
+            logger.warning("⚠️ Aucune image optique de qualité, bascule vers Sentinel-1 SAR")
+            s1_collection = ee.ImageCollection('COPERNICUS/S1_GRD') \
+                .filterDate(date_debut, date_fin) \
                 .filterBounds(roi) \
-                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', max_cloud))
-            count = collection.size().getInfo()
-            logger.info(f"📸 Après élargissement: {count} images")
-            
-            if count == 0:
-                raise Exception("❌ Aucune image disponible")
-        
-        # Prendre l'image la plus récente
-        image = collection.sort('system:time_start', False).first()
-        date_image = image.get('system:time_start').getInfo()
-        date_str = datetime.fromtimestamp(date_image/1000).strftime('%Y-%m-%d')
-        logger.info(f"🖼️ Image sélectionnée du {date_str}")
-        
-        # Calculer tous les indices
-        indices = self.compute_all_indices(image)
-        
-        # Limite de pixels Earth Engine
-        max_pixels = 262144
-        logger.info(f"🎯 Limite Earth Engine: {max_pixels} pixels max")
-        
-        # Échantillonner chaque indice
-        results = {}
-        for idx_name, idx_image in indices.items():
-            # Échantillonner sans paramètre side (pas supporté)
-            sampled = idx_image.sampleRectangle(
-                region=roi, 
-                defaultValue=0
-            )
-            
-            # Récupérer les données
-            data = sampled.get(idx_name).getInfo()
-            results[idx_name] = np.array(data)
-            
-            logger.info(f"   {idx_name} taille originale: {results[idx_name].shape}")
-            
-            # Si l'image est trop grande, on la réduit
-            if results[idx_name].size > max_pixels:
-                logger.warning(f"⚠️ {idx_name} trop grand ({results[idx_name].size} pixels), redimensionnement...")
-                
-                # Calculer le facteur de réduction pour atteindre max_pixels
-                current_size = results[idx_name].size
-                scale_factor = np.sqrt(max_pixels / current_size)
-                
-                # Calculer les nouvelles dimensions
-                new_height = int(results[idx_name].shape[0] * scale_factor)
-                new_width = int(results[idx_name].shape[1] * scale_factor)
-                
-                # Redimensionner avec scipy (si disponible) ou interpolation simple
-                try:
-                    from scipy.ndimage import zoom
-                    results[idx_name] = zoom(results[idx_name], scale_factor)
-                except ImportError:
-                    # Fallback : interpolation linéaire simple
-                    from skimage.transform import resize
-                    results[idx_name] = resize(results[idx_name], (new_height, new_width))
-                
-                logger.info(f"   Redimensionné à: {results[idx_name].shape}")
-            
-            # Nettoyer les valeurs (NaN, Inf)
-            mean_val = np.nanmean(results[idx_name])
-            results[idx_name] = np.where(
-                np.isnan(results[idx_name]) | np.isinf(results[idx_name]), 
-                mean_val, 
-                results[idx_name]
-            )
-        
-        # Extraire NDVI pour la compatibilité avec l'ancien code
-        ndvi_array = results['NDVI']
-        
-        # Normaliser EVI
-        if 'EVI' in results:
-            results['EVI'] = self.normalize_evi(results['EVI'])
+                .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV')) \
+                .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VH')) \
+                .filter(ee.Filter.eq('instrumentMode', 'IW')) \
+                .filter(ee.Filter.eq('orbitProperties_pass', 'DESCENDING')) \
+                .select(['VV', 'VH'])
 
-        logger.info(f"✅ Images récupérées, taille finale: {ndvi_array.shape}")
-        for idx_name, idx_array in results.items():
-            logger.info(f"   {idx_name}: min={idx_array.min():.2f}, max={idx_array.max():.2f}, moy={idx_array.mean():.2f}")
-        
-        return ndvi_array, results, date_str, image
+            s1_count = s1_collection.size().getInfo()
+            if s1_count == 0:
+                raise Exception("Aucune image Sentinel-1 disponible non plus pour la période et la zone")
 
-    def get_rgb_image(self, image, roi, target_side=512):
+            median_s1 = s1_collection.median()
+
+            # Date de la plus récente image radar
+            newest_radar = s1_collection.sort('system:time_start', False).first()
+            date_image = ee.Date(newest_radar.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+            print(f"   📅 Dernière image radar : {date_image}")
+            # Ratio VH/VV
+            ratio = median_s1.expression('VH / VV', {
+                'VH': median_s1.select('VH'),
+                'VV': median_s1.select('VV')
+            }).rename('ratio_VH_VV')
+
+            # Optionnel : ajouter des textures GLCM (Contraste, Homogénéité) sur VV
+            # Pour simplifier, on ne garde que le ratio, mais on peut enrichir
+            indices = {'ratio_VH_VV': ratio}
+            source = 'radar'
+            logger.info(f"🛰️ Utilisation d'un composite médian Sentinel-1 ({s1_count} images)")
+
+        # Extraction des matrices numpy avec résolution forcée à 10m
+        indices_arrays = {}
+        for name, img in indices.items():
+            sampled = img.reproject(crs='EPSG:32632', scale=10) \
+                          .sampleRectangle(region=roi, defaultValue=0)
+            data = sampled.get(name).getInfo()
+            arr = np.array(data)
+            # Nettoyage des valeurs aberrantes
+            arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+            indices_arrays[name] = arr
+            print(f"   {name} : shape {arr.shape}, min={arr.min():.4f}, max={arr.max():.4f}, std={arr.std():.4f}")
+
+        # Extraction de l'image RGB true-color (uniquement pour l'optique)
+        rgb_array = None
+        if source == 'optique':
+            try:
+                # Extraire les bandes B4 (R), B3 (V), B2 (B) du composite médian
+                rgb_img = median_s2.select(['B4', 'B3', 'B2'])
+                sampled_rgb = rgb_img.reproject(crs='EPSG:32632', scale=10) \
+                                     .sampleRectangle(region=roi, defaultValue=0)
+                r = np.array(sampled_rgb.get('B4').getInfo())
+                g = np.array(sampled_rgb.get('B3').getInfo())
+                b = np.array(sampled_rgb.get('B2').getInfo())
+                # Fusionner tous les pixels et exclure les zéros (padding sampleRectangle)
+                all_px = np.concatenate([r.ravel(), g.ravel(), b.ravel()])
+                all_px = all_px[all_px > 0]
+                if len(all_px) < 10:
+                    stretch_min, stretch_max = 0, 3000
+                else:
+                    stretch_min = float(np.percentile(all_px, 2))
+                    stretch_max = float(np.percentile(all_px, 98))
+                # Appliquer le même stretch aux 3 bandes (préserve la balance des couleurs)
+                def stretch(band, lo, hi):
+                    clipped = np.clip(band, lo, hi)
+                    return ((clipped - lo) / max(hi - lo, 1.0) * 255).astype(np.uint8)
+                rgb_array = np.stack([
+                    stretch(r, stretch_min, stretch_max),
+                    stretch(g, stretch_min, stretch_max),
+                    stretch(b, stretch_min, stretch_max)
+                ], axis=-1)
+                # Upscaling si l'image est trop petite (< 512px de côté)
+                h, w = rgb_array.shape[:2]
+                target_side = 512
+                if h < target_side or w < target_side:
+                    zoom_y = max(target_side / h, 1.0)
+                    zoom_x = max(target_side / w, 1.0)
+                    rgb_array = zoom(rgb_array.astype(np.float64), (zoom_y, zoom_x, 1), order=1)
+                    rgb_array = np.clip(rgb_array, 0, 255).astype(np.uint8)
+                print(f"   RGB : shape {rgb_array.shape}, stretch [{stretch_min:.0f}–{stretch_max:.0f}]")
+            except Exception as e:
+                print(f"   ⚠️ Impossible d'extraire l'image RGB : {e}")
+                rgb_array = None
+
+        return indices_arrays, source, date_image, roi, rgb_array
+
+    def detect_stress_isolation_forest(self, indices_dict, contamination=None):
         """
-        Extrait une image RGB réelle (sans filtre) de la parcelle
-        """
-        logger.info("📸 Extraction de l'image RGB réelle...")
-        rgb = image.select(['B4', 'B3', 'B2'])
-        sampled = rgb.sampleRectangle(region=roi, defaultValue=0)
-
-        red = np.array(sampled.get('B4').getInfo())
-        green = np.array(sampled.get('B3').getInfo())
-        blue = np.array(sampled.get('B2').getInfo())
-
-        def normalize_band(band):
-            band = np.nan_to_num(band, nan=0)
-            min_val = np.min(band)
-            max_val = np.max(band)
-            if max_val > min_val:
-                band = (band - min_val) / (max_val - min_val) * 255
-            return np.uint8(np.clip(band, 0, 255))
-
-        red_norm = normalize_band(red)
-        green_norm = normalize_band(green)
-        blue_norm = normalize_band(blue)
-
-        rgb_array = np.stack([red_norm, green_norm, blue_norm], axis=2)
-        logger.info(f"✅ Image RGB récupérée, taille: {rgb_array.shape}")
-        return rgb_array
-
-    def save_rgb_image(self, rgb_array, save_path):
-        """Sauvegarde l'image RGB en PNG"""
-        plt.figure(figsize=(10, 10))
-        plt.imshow(rgb_array)
-        plt.axis('off')
-        plt.tight_layout(pad=0)
-        plt.savefig(save_path, dpi=150, bbox_inches='tight', pad_inches=0)
-        plt.close()
-        logger.info(f"✅ Image RGB sauvegardée: {save_path}")
-
-    def calculate_infected_area(self, ndvi, seuil=None):
-        """
-        Calcule la surface infectée à partir de l'image NDVI
-        
-        Args:
-            ndvi: image NDVI
-            seuil: valeur en dessous de laquelle on considère comme malade
-                (si None, utilise la valeur de config)
-            
-        Returns:
-            dict: résultats
-        """
-        # Utiliser le seuil de config si non spécifié
-        if seuil is None:
-            seuil = self.config.get('detection', {}).get('ndvi_seuil', 0.35)
-        
-        logger.info(f"🔍 Utilisation du seuil NDVI = {seuil}")
-        
-        # 1. Créer un masque des pixels malades (True si malade)
-        masque_malade = ndvi < seuil
-        
-        # 2. Compter le nombre de pixels malades
-        pixels_malades = np.sum(masque_malade)
-        pixels_total = ndvi.shape[0] * ndvi.shape[1]
-        
-        # 3. Calculer le pourcentage (basé sur les pixels)
-        pourcentage_pixels = (pixels_malades / pixels_total) * 100
-        
-        # 4. Calculer la surface réelle avec notre nouvelle méthode
-        surface_infectee_ha, surface_totale_ha, pourcentage_reel = self.calculate_real_area(
-            pixels_malades, pixels_total
-        )
-        
-        # 5. Résultats
-        resultats = {
-            'pixels_malades': int(pixels_malades),
-            'pixels_total': int(pixels_total),
-            'pourcentage_pixels': float(pourcentage_pixels),
-            'pourcentage_reel': float(pourcentage_reel),
-            'surface_totale_ha': float(surface_totale_ha),
-            'surface_infectee_ha': float(surface_infectee_ha),
-            'masque': masque_malade,
-            'seuil_utilise': seuil
-        }
-        
-        logger.info(f"📊 Analyse (seuil={seuil}):")
-        logger.info(f"   Pixels malades: {pixels_malades}/{pixels_total} ({pourcentage_pixels:.1f}%)")
-        logger.info(f"   Surface infectée réelle: {surface_infectee_ha:.3f} ha sur {surface_totale_ha} ha")
-        
-        return resultats
-
-    def detect_zone_type(self, ndvi_array):
-        """
-        Détecte le type de zone à partir des statistiques NDVI
+        Détecte les pixels anormaux (stress) par Isolation Forest.
 
         Args:
-            ndvi_array: tableau numpy contenant les valeurs NDVI
+            indices_dict: dictionnaire de tableaux numpy (même dimensions spatiales)
+            contamination: proportion attendue d'anomalies (par défaut self.contamination)
 
         Returns:
-            dict: informations sur le type de zone
+            dict contenant masque, pourcentage, surfaces, etc.
         """
-        ndvi_mean = float(np.mean(ndvi_array))
-        ndvi_std = float(np.std(ndvi_array))
-        ndvi_min = float(np.min(ndvi_array))
-        ndvi_max = float(np.max(ndvi_array))
+        if contamination is None:
+            contamination = self.contamination
 
-        is_water = ndvi_mean < 0
-        is_urban = ndvi_mean < 0.25 and ndvi_std < 0.15
-        is_desert = ndvi_mean < 0.2 and ndvi_std > 0.1
-        is_agricultural = 0.3 < ndvi_mean < 0.8 and 0.05 < ndvi_std < 0.25
+        # Vérifier que tous les tableaux ont la même forme
+        shapes = [arr.shape for arr in indices_dict.values()]
+        if len(set(shapes)) != 1:
+            raise ValueError(f"Les indices n'ont pas la même shape : {shapes}")
+        shape = shapes[0]
+        n_pixels = shape[0] * shape[1]
 
-        zone_type = 'unknown'
-        confidence = 0.5
+        print(f"📊 Détection Isolation Forest : shape={shape}, pixels={n_pixels}, features={len(indices_dict)}")
+        for name, arr in indices_dict.items():
+            print(f"   {name}: min={arr.min():.4f}, max={arr.max():.4f}, std={arr.std():.4f}")
 
-        if is_water:
-            zone_type = 'water'
-            confidence = 0.9
-        elif is_urban:
-            zone_type = 'urban'
-            confidence = 0.8
-        elif is_desert:
-            zone_type = 'desert'
-            confidence = 0.7
-        elif is_agricultural:
-            zone_type = 'agricultural'
-            confidence = 0.8
+        # Si trop peu de pixels, utiliser un seuil simple
+        if n_pixels < 20:
+            print(f"⚠️ Petit échantillon ({n_pixels} pixels) — détection par seuil fixe")
+            # Pour les très petits échantillons, évaluer le premier indice directement
+            if n_pixels <= 2:
+                first = list(indices_dict.keys())[0]
+                val = indices_dict[first].flatten()[0]
+                stress = val < 0.25  # végétation saine: EVI/GNDVI > 0.3
+                pixels_stress = 1 if stress else 0
+                pourcentage_stress = (pixels_stress / n_pixels) * 100.0
+                surface_stress_ha = self.surface_totale_ha * (pixels_stress / n_pixels)
+                mask_anomalies = np.full(shape, stress, dtype=bool)
+                print(f"   Pixel unique : valeur={val:.4f}, stress={'OUI' if stress else 'NON'}")
+            else:
+                # Combiner les indices normalisés, seuil à 20%
+                scores = np.zeros(n_pixels)
+                for name, arr in indices_dict.items():
+                    flat = arr.flatten()
+                    if flat.std() > 1e-6:
+                        scores += (flat - flat.mean()) / flat.std()
+                    else:
+                        scores += flat
+                seuil = np.percentile(scores, 20)
+                mask_anomalies = (scores < seuil).reshape(shape)
+                pixels_stress = np.sum(mask_anomalies)
+                pourcentage_stress = (pixels_stress / n_pixels) * 100.0
+                surface_stress_ha = self.surface_totale_ha * (pixels_stress / n_pixels)
+                print(f"   Seuil combiné (20%), stress: {pixels_stress}/{n_pixels} ({pourcentage_stress:.1f}%)")
         else:
-            zone_type = 'mixed'
-            confidence = 0.55
+            # Construire la matrice de caractéristiques (pixels x features)
+            n_features = len(indices_dict)
+            X = np.zeros((n_pixels, n_features))
+            for i, (name, arr) in enumerate(indices_dict.items()):
+                X[:, i] = arr.flatten()
 
-        logger.info("📍 Analyse de zone:")
-        logger.info(f"   NDVI moyen: {ndvi_mean:.2f}")
-        logger.info(f"   Écart-type: {ndvi_std:.2f}")
-        logger.info(f"   Type détecté: {zone_type.upper()} (confiance: {confidence:.0%})")
+            # Supprimer les éventuels NaN ou infinis (normalement déjà traités)
+            X = np.nan_to_num(X, nan=0.0)
+
+            # Isolation Forest
+            clf = IsolationForest(contamination=contamination, random_state=42, n_estimators=100)
+            predictions = clf.fit_predict(X)  # -1 = anomalie, 1 = normal
+            mask_anomalies = (predictions == -1).reshape(shape)
+
+            pixels_stress = np.sum(mask_anomalies)
+            pourcentage_stress = (pixels_stress / n_pixels) * 100.0
+            surface_stress_ha = self.surface_totale_ha * (pixels_stress / n_pixels)
+
+        print(f"📊 Résultat Isolation Forest (contamination={contamination}):")
+        print(f"   Pixels stressés : {pixels_stress}/{n_pixels} ({pourcentage_stress:.2f}%)")
+        print(f"   Surface stressée : {surface_stress_ha:.3f} ha")
 
         return {
-            'type': zone_type,
+            'masque_stress': mask_anomalies,
+            'pixels_stress': int(pixels_stress),
+            'pixels_total': n_pixels,
+            'pourcentage_stress': pourcentage_stress,
+            'surface_stress_ha': surface_stress_ha,
+            'surface_totale_ha': self.surface_totale_ha,
+            'contamination_utilisee': contamination,
+            'n_features': len(indices_dict)
+        }
+
+    def plot_stress_map(self, indices_dict, masque_stress, save_path=None, show=False):
+        """
+        Génère une visualisation : premier indice (ex: EVI) et superposition des anomalies.
+
+        Args:
+            indices_dict: dictionnaire des indices
+            masque_stress: masque booléen des anomalies
+            save_path: chemin de sauvegarde (optionnel)
+            show: afficher interactivement
+        """
+        # Utiliser le premier indice comme fond
+        first_name = list(indices_dict.keys())[0]
+        base_image = indices_dict[first_name]
+
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        im1 = axes[0].imshow(base_image, cmap='viridis')
+        axes[0].set_title(f'{first_name}')
+        plt.colorbar(im1, ax=axes[0])
+
+        # Superposition des anomalies en rouge
+        overlay = np.ma.masked_where(~masque_stress, base_image)
+        axes[1].imshow(base_image, cmap='viridis')
+        axes[1].imshow(overlay, cmap='Reds', alpha=0.7)
+        axes[1].set_title('Zones de stress détectées (rouge)')
+        plt.colorbar(im1, ax=axes[1])
+
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path, dpi=150)
+            print(f"✅ Carte de stress sauvegardée : {save_path}")
+        if show:
+            plt.show()
+        plt.close(fig)
+
+    # ─── ZONE CLASSIFICATION ─────────────────────────────────────────────────
+    CLASS_NAMES = {
+        0: 'inconnu',
+        1: 'eau',
+        2: 'desert',
+        3: 'urbain_sol_nu',
+        4: 'vegetation_clairsemee',
+        5: 'vegetation_moderee',
+        6: 'vegetation_dense',
+        7: 'zone_humide',
+    }
+
+    CLASS_COLORS = {
+        'eau': '#1565C0',
+        'desert': '#FFA000',
+        'urbain_sol_nu': '#757575',
+        'vegetation_clairsemee': '#A5D6A7',
+        'vegetation_moderee': '#66BB6A',
+        'vegetation_dense': '#1B5E20',
+        'zone_humide': '#4DD0E1',
+        'inconnu': '#BDBDBD',
+    }
+
+    def classify_zones(self, indices_dict):
+        """
+        Classification pixel-wise basée sur des seuils décisionnels
+        validés par la recherche (Xu 2006, Jiang 2008, Drusch 2012).
+
+        Args:
+            indices_dict: dict avec EVI, GNDVI, NDWI (optique) ou ratio_VH_VV (radar)
+
+        Returns:
+            dict: zone_type, zone_map, class_distribution, confidence, warning
+        """
+        shape = None
+        n_pixels = 0
+        for arr in indices_dict.values():
+            shape = arr.shape
+            n_pixels = shape[0] * shape[1]
+            break
+
+        # Initialiser la carte des classes (par défaut: inconnu)
+        zone_map = np.zeros(shape, dtype=np.uint8)
+
+        # ─── Classification optique (EVI + NDWI + NDBI) ───
+        # Références : NDBI → Zha et al. (2003) ; MNDWI → Xu (2006) ;
+        #             Seuils optimaux globaux → Harrak et al. (2025, RS)
+        if all(k in indices_dict for k in ('EVI', 'GNDVI', 'NDWI', 'NDBI')):
+            evi = indices_dict['EVI']
+            gndvi = indices_dict['GNDVI']
+            ndwi = indices_dict['NDWI']
+            ndbi = indices_dict['NDBI']
+
+            # Priorité décroissante : chaque pixel prend la première classe vraie
+            # 1. Eau (NDWI > 0.15 — Harrak 2025)
+            mask = (ndwi > 0.15)
+            zone_map[mask] = 1
+            # 2. Désert (très faible EVI, NDWI très négatif, NDBI ≈ 0 ou négatif)
+            mask = (ndwi < -0.1) & (evi < 0.05) & (zone_map == 0)
+            zone_map[mask] = 2
+            # 3. Urbain / bâti (NDBI > seuil global -0.08, EVI bas)
+            mask = (ndbi > -0.08) & (evi < 0.15) & (zone_map == 0)
+            zone_map[mask] = 3
+            # 4. Sol nu (NDBI entre -0.15 et -0.08, EVI bas)
+            mask = (ndbi > -0.15) & (ndbi <= -0.08) & (evi < 0.15) & (zone_map == 0)
+            zone_map[mask] = 3
+            # 5. Zone humide (végétation + eau)
+            mask = (ndwi > -0.05) & (evi > 0.1) & (zone_map == 0)
+            zone_map[mask] = 7
+            # 6. Végétation dense (EVI > 0.35 + NDBI négatif)
+            mask = (evi > 0.35) & (gndvi > 0.35) & (ndbi < -0.08) & (zone_map == 0)
+            zone_map[mask] = 6
+            # 7. Végétation modérée (EVI > 0.2 + NDBI négatif)
+            mask = (evi > 0.2) & (gndvi > 0.2) & (ndbi < -0.08) & (zone_map == 0)
+            zone_map[mask] = 5
+            # 8. Végétation clairsemée / rurale
+            mask = (evi > 0.1) & (gndvi > 0.1) & (zone_map == 0)
+            zone_map[mask] = 4
+
+            conf_level = 'haute'
+            print(f"   🌍 Classification zones : optique (EVI+NDWI+NDBI+GNDVI)")
+
+        # ─── Classification radar (ratio VH/VV, moins précise) ───
+        elif 'ratio_VH_VV' in indices_dict:
+            ratio = indices_dict['ratio_VH_VV']
+            # Ratio VH/VV : < 0.2 = eau/surface lisse, > 0.3 = végétation,
+            # entre 0.2 et 0.3 = sol nu/urbain
+            zone_map[ratio < 0.15] = 1  # eau
+            zone_map[(ratio >= 0.15) & (ratio < 0.25) & (zone_map == 0)] = 3  # urbain
+            zone_map[(ratio >= 0.25) & (ratio < 0.35) & (zone_map == 0)] = 4  # clairsemé
+            zone_map[(ratio >= 0.35) & (zone_map == 0)] = 5  # végétation
+
+            conf_level = 'moyenne'
+            print(f"   🌍 Classification zones : radar (ratio VH/VV, précision réduite)")
+
+        # Statistiques de distribution
+        class_ids, class_counts = np.unique(zone_map, return_counts=True)
+        class_distribution = {}
+        for cid, count in zip(class_ids, class_counts):
+            name = self.CLASS_NAMES.get(int(cid), 'inconnu')
+            class_distribution[name] = {
+                'pixels': int(count),
+                'pourcentage': round(float(count) / n_pixels * 100, 1)
+            }
+
+        # Classe dominante
+        dominant_id = class_ids[np.argmax(class_counts)]
+        zone_type = self.CLASS_NAMES.get(int(dominant_id), 'inconnu')
+
+        # Confiance : proportion de pixels non "inconnu"
+        n_classified = int(class_distribution.get('inconnu', {}).get('pixels', 0))
+        confidence = round((n_pixels - n_classified) / n_pixels, 3) if n_pixels > 0 else 0.0
+
+        # Alerte si la classe dominante est problématique pour une parcelle agricole
+        warning = None
+        if zone_type == 'eau':
+            if class_distribution.get('eau', {}).get('pourcentage', 0) > 50:
+                warning = "Parcelle majoritairement aquatique — risque d'inondation"
+            elif class_distribution.get('eau', {}).get('pourcentage', 0) > 20:
+                warning = "Présence significative d'eau — vérifier le drainage"
+        elif zone_type == 'desert':
+            warning = "Sol très aride — irrigation nécessaire"
+        elif zone_type == 'urbain_sol_nu':
+            warning = "Zone non végétale dominante — vérifier l'emplacement de la parcelle"
+        elif zone_type == 'vegetation_clairsemee':
+            warning = "Végétation clairsemée — qualité du sol à surveiller"
+
+        print(f"   Zone dominante : {zone_type} (confiance: {confidence:.1%})")
+        if warning:
+            print(f"   ⚠️ {warning}")
+
+        return {
+            'zone_type': zone_type,
+            'zone_map': zone_map,
+            'class_distribution': class_distribution,
             'confidence': confidence,
-            'stats': {
-                'mean': ndvi_mean,
-                'std': ndvi_std,
-                'min': ndvi_min,
-                'max': ndvi_max
-            },
-            'is_agricultural': zone_type == 'agricultural'
+            'conf_level': conf_level,
+            'warning': warning,
         }
+
+    # --- Méthodes de compatibilité avec l'ancien pipeline (si nécessaire) ---
+    def get_ndvi_image(self, coords, date_debut, date_fin, max_cloud=20):
+        """
+        Méthode legacy pour compatibilité ascendante.
+        Retourne ndvi, all_indices, date_str, image (mais on utilise la nouvelle approche)
+        """
+        indices_dict, source, date_image, roi = self.get_multi_index_image(coords, date_debut, date_fin, max_cloud)
+        # Extraire un pseudo-NDVI (pour compatibilité) : on utilise GNDVI ou ratio
+        if 'GNDVI' in indices_dict:
+            ndvi_array = indices_dict['GNDVI']  # approximation
+        elif 'ratio_VH_VV' in indices_dict:
+            ndvi_array = indices_dict['ratio_VH_VV']
+        else:
+            ndvi_array = np.zeros((10,10))
+        return ndvi_array, indices_dict, date_image, None
 
     def calculate_infected_area(self, ndvi, seuil=None):
         """
-        Calcule la surface infectée à partir de l'image NDVI
-
-        Args:
-            ndvi: image NDVI
-            seuil: valeur en dessous de laquelle on considère comme malade
-                (si None, utilise la valeur de config)
-
-        Returns:
-            dict: résultats
+        Méthode legacy - ne plus utiliser. On utilise désormais detect_stress_isolation_forest.
         """
-        # Utiliser le seuil de config si non spécifié
-        if seuil is None:
-            seuil = self.config.get('detection', {}).get('ndvi_seuil', 0.35)
-
-        zone_info = self.detect_zone_type(ndvi)
-
-        if not zone_info['is_agricultural']:
-            logger.warning(f"⚠️ Zone non agricole détectée: {zone_info['type']}")
-            pixels_total = ndvi.shape[0] * ndvi.shape[1]
-            return {
-                'pixels_malades': 0,
-                'pixels_total': int(pixels_total),
-                'pourcentage_pixels': 0.0,
-                'surface_infectee_ha': 0.0,
-                'masque': np.zeros_like(ndvi, dtype=bool),
-                'seuil_utilise': seuil,
-                'zone_type': zone_info['type'],
-                'zone_confidence': zone_info['confidence'],
-                'warning': f"ZONE_NON_AGRICOLE_{zone_info['type'].upper()}"
-            }
-
-        logger.info(f"✅ Zone agricole confirmée (type={zone_info['type']}, confiance={zone_info['confidence']:.0%})")
-        logger.info(f"🔍 Utilisation du seuil NDVI = {seuil}")
-
-        # 1. Créer un masque des pixels malades (True si malade)
-        masque_malade = ndvi < seuil
-
-        # 2. Compter le nombre de pixels malades
-        pixels_malades = np.sum(masque_malade)
-        pixels_total = ndvi.shape[0] * ndvi.shape[1]
-
-        # 3. Calculer le pourcentage (basé sur les pixels)
-        pourcentage_pixels = (pixels_malades / pixels_total) * 100
-
-        # 4. Calculer la surface réelle avec notre nouvelle méthode
-        surface_infectee_ha, surface_totale_ha, pourcentage_reel = self.calculate_real_area(
-            pixels_malades, pixels_total
-        )
-
-        resultats = {
-            'pixels_malades': int(pixels_malades),
-            'pixels_total': int(pixels_total),
-            'pourcentage_pixels': float(pourcentage_pixels),
-            'pourcentage_reel': float(pourcentage_reel),
-            'surface_totale_ha': float(surface_totale_ha),
-            'surface_infectee_ha': float(surface_infectee_ha),
-            'masque': masque_malade,
-            'seuil_utilise': seuil,
-            'zone_type': zone_info['type'],
-            'zone_confidence': zone_info['confidence'],
-        }
-
-        logger.info(f"📊 Analyse (seuil={seuil}):")
-        logger.info(f"   Pixels malades: {pixels_malades}/{pixels_total} ({pourcentage_pixels:.1f}%)")
-        logger.info(f"   Surface infectée réelle: {surface_infectee_ha:.3f} ha sur {surface_totale_ha} ha")
-
-        return resultats
-
-    def detect_anomalies_multiple_indices(self, indices_dict, seuils=None):
-        """
-        Détecte les anomalies en combinant plusieurs indices
-        
-        Args:
-            indices_dict: dict des indices {nom: tableau}
-            seuils: dict des seuils {nom: valeur}
-        
-        Returns:
-            dict: résultats combinés
-        """
-        if seuils is None:
-            # Utiliser les seuils de la config si disponibles
-            detection_config = self.config.get('detection', {})
-            seuils = {
-                'NDVI': detection_config.get('ndvi_seuil', 0.35),
-                'EVI': detection_config.get('evi_seuil', 0.2),
-                'SAVI': detection_config.get('savi_seuil', 0.25)
-            }
-        
-        logger.info(f"🔍 Détection multi-indices avec seuils: {seuils}")
-        
-        # Créer un masque pour chaque indice
-        masques = {}
-        for nom, idx_array in indices_dict.items():
-            if nom in seuils:
-                masques[nom] = idx_array < seuils[nom]
-                logger.info(f"   {nom}: {np.sum(masques[nom])} pixels anormaux")
-        
-        # Combiner les masques (union: un pixel est malade si un indice le détecte)
-        masque_combine = np.zeros_like(indices_dict['NDVI'], dtype=bool)
-        for masque in masques.values():
-            masque_combine = masque_combine | masque
-        
-        pixels_malades = np.sum(masque_combine)
-        pourcentage = (pixels_malades / masque_combine.size) * 100
-        
-        logger.info(f"   COMBINÉ: {pixels_malades} pixels anormaux ({pourcentage:.1f}%)")
-        
+        logger.warning("⚠️ calculate_infected_area est obsolète. Utilisez detect_stress_isolation_forest.")
         return {
-            'masque': masque_combine,
-            'pixels_malades': pixels_malades,
-            'pourcentage': pourcentage,
-            'masques_individuels': masques,
-            'seuils_utilises': seuils
+            'pixels_malades': 0,
+            'pixels_total': 0,
+            'pourcentage_pixels': 0.0,
+            'surface_infectee_ha': 0.0,
+            'masque': np.zeros_like(ndvi, dtype=bool)
         }
 
-    def plot_ndvi(self, ndvi, masque=None, titre="Image NDVI", save_path=None, show=False):
-        """
-        Génère un graphique NDVI et optionnellement le masque
-
-        Args:
-            ndvi: image NDVI
-            masque: masque des zones malades (optionnel)
-            titre: titre du graphique
-            save_path: chemin pour sauvegarder (optionnel)
-            show: afficher le graphique (si True)
-        """
-        fig, axes = plt.subplots(1, 2 if masque is not None else 1, figsize=(12, 5))
-        
-        # Si on a qu'un seul graphique
-        if masque is None:
-            im = axes.imshow(ndvi, cmap='RdYlGn', vmin=0, vmax=1)
-            axes.set_title(titre)
-            axes.set_xlabel('Pixels')
-            axes.set_ylabel('Pixels')
-            plt.colorbar(im, ax=axes, label='NDVI')
-        else:
-            im1 = axes[0].imshow(ndvi, cmap='RdYlGn', vmin=0, vmax=1)
-            axes[0].set_title(f'{titre} - NDVI')
-            axes[0].set_xlabel('Pixels')
-            axes[0].set_ylabel('Pixels')
-            plt.colorbar(im1, ax=axes[0], label='NDVI')
-            
-            im2 = axes[1].imshow(masque, cmap='Reds')
-            axes[1].set_title('Zones malades détectées')
-            axes[1].set_xlabel('Pixels')
-            axes[1].set_ylabel('Pixels')
-            plt.colorbar(im2, ax=axes[1], label='Malade (1=oui)')
-        
-        plt.tight_layout()
-        
-        if save_path:
-            plt.savefig(save_path, dpi=150)
-            logger.info(f"✅ Graphique sauvegardé: {save_path}")
-        if show:
-            plt.show()
-        plt.close(fig)
-    
-    def plot_all_indices(self, indices_dict, masque=None, save_path=None, show=False):
-        """
-        Génère tous les indices côte à côte
-        
-        Args:
-            indices_dict: dict des indices
-            masque: masque des anomalies (optionnel)
-            save_path: chemin de sauvegarde
-            show: afficher le graphique (si True)
-        """
-        n_indices = len(indices_dict)
-        fig, axes = plt.subplots(1, n_indices + (1 if masque is not None else 0), 
-                                  figsize=(5 * (n_indices + 1), 5))
-        
-        for i, (nom, data) in enumerate(indices_dict.items()):
-            im = axes[i].imshow(data, cmap='RdYlGn', vmin=0, vmax=1)
-            axes[i].set_title(f'{nom}')
-            axes[i].set_xlabel('Pixels')
-            axes[i].set_ylabel('Pixels')
-            plt.colorbar(im, ax=axes[i])
-        
-        if masque is not None:
-            axes[-1].imshow(masque, cmap='Reds')
-            axes[-1].set_title('Zones malades (combiné)')
-            axes[-1].set_xlabel('Pixels')
-            axes[-1].set_ylabel('Pixels')
-            plt.colorbar(axes[-1].images[0], ax=axes[-1], label='Malade')
-        
-        plt.tight_layout()
-        
-        if save_path:
-            plt.savefig(save_path, dpi=150)
-            logger.info(f"✅ Graphique multi-indices sauvegardé: {save_path}")
-        if show:
-            plt.show()
-        plt.close(fig)
-
-    def calculate_real_area(self, pixels_malades, pixels_total):
-        """
-        Calcule la surface réelle infectée en hectares
-        
-        Args:
-            pixels_malades: nombre de pixels malades
-            pixels_total: nombre total de pixels dans l'image
-        
-        Returns:
-            float: surface infectée en hectares
-            float: surface totale en hectares
-            float: ratio (pourcentage)
-        """
-        # Surface réelle de la parcelle (depuis config)
-        surface_totale_ha = self.config['parcelle']['surface_ha']
-        
-        # Calculer la surface représentée par chaque pixel
-        surface_par_pixel = surface_totale_ha / pixels_total
-        
-        # Surface infectée
-        surface_infectee_ha = pixels_malades * surface_par_pixel
-        
-        # Pourcentage (logique)
-        pourcentage = (pixels_malades / pixels_total) * 100
-        
-        logger.info(f"📐 Calcul de surface réel:")
-        logger.info(f"   Parcelle: {surface_totale_ha} ha")
-        logger.info(f"   Pixels total: {pixels_total}")
-        logger.info(f"   Surface par pixel: {surface_par_pixel:.6f} ha")
-        logger.info(f"   Pixels malades: {pixels_malades}")
-        logger.info(f"   Surface infectée: {surface_infectee_ha:.3f} ha")
-        logger.info(f"   Pourcentage: {pourcentage:.2f}%")
-        
-        return surface_infectee_ha, surface_totale_ha, pourcentage
-
-
-# Test du module si exécuté directement
+# Exemple d'utilisation directe (test)
 if __name__ == "__main__":
     import yaml
-    
-    print("="*60)
-    print("🧪 TEST DU MODULE SATELLITE RÉEL")
-    print("="*60)
-    
-    # Charger la config
+    logging.basicConfig(level=logging.INFO)
     with open('config.yaml', 'r') as f:
         config = yaml.safe_load(f)
-    
-    # Créer le module
-    sat = RealSatellite(config)
-    
-    # Coordonnées de test (Cameroun)
-    coords = [12.55, 4.55, 12.58, 4.58]  # Note: [long_min, lat_min, long_max, lat_max]
-    
-    # Récupérer une image avec tous les indices
-    ndvi, all_indices, date = sat.get_ndvi_image(
-        coords,
-        '2026-01-01',
-        '2026-03-01',
-        max_cloud=20
-    )
-    
-    print(f"\n✅ Image du {date} récupérée")
-    print(f"   Dimensions: {ndvi.shape}")
-    
-    # Analyser avec le seuil de config
-    resultats = sat.calculate_infected_area(ndvi)  # seuil automatique depuis config
-    
-    # Détection multi-indices
-    multi_results = sat.detect_anomalies_multiple_indices(all_indices)
-    
-    # Afficher tous les indices
-    sat.plot_all_indices(all_indices, multi_results['masque'], 
-                         save_path="data/outputs/multi_indices_test.png")
-    
-    print("\n✅ Test terminé")
 
+    sat = RealSatellite(config)
+    coords = [10.32, 5.42, 10.36, 5.46]  # Zone agricole test (Cameroun)
+    indices, source, date, roi = sat.get_multi_index_image(coords, '2025-12-01', '2026-03-01')
+    results = sat.detect_stress_isolation_forest(indices)
+    sat.plot_stress_map(indices, results['masque_stress'], save_path='test_stress.png')
+    print("Test terminé. Consultez test_stress.png")

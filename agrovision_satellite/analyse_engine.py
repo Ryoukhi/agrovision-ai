@@ -4,11 +4,9 @@ Moteur d'analyse satellite - Interface pour l'API
 import sys
 import os
 import json
-import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 import numpy as np
-import ee
 
 # Ajouter le chemin pour importer les modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -81,62 +79,52 @@ class AnalyseEngine:
         date_debut = (datetime.now() - timedelta(days=60)).strftime('%Y-%m-%d')
         
         try:
-            ndvi, all_indices, date_image, image = self.satellite.get_ndvi_image(
+            indices_dict, source, date_image, roi_eroded, rgb_array = self.satellite.get_multi_index_image(
                 coords,
                 date_debut,
                 date_fin,
                 max_cloud=20
             )
-            
-            # Détection des zones malades
-            seuil = self.config.get('detection', {}).get('ndvi_seuil', 0.35)
-            results = self.satellite.calculate_infected_area(ndvi, seuil=seuil)
-            zone_type = results.get('zone_type', 'unknown')
-            zone_confidence = results.get('zone_confidence', 0)
-            zone_warning = results.get('warning')
-            if zone_warning:
-                print(f"⚠️ ATTENTION: Zone de type {zone_type} détectée ({zone_confidence:.0%})")
-                print("   Cette analyse ne concerne pas une zone agricole")
 
-            # ✅ NOUVEAU : Extraire et sauvegarder l'image RGB
-            image_rgb_path = None
-            try:
-                roi = ee.Geometry.Rectangle(coords)
-                rgb_array = self.satellite.get_rgb_image(image, roi, target_side=512)
-                image_rgb_path = self.output_dir / f"analyse_{parcelle_id}_rgb.png"
-                self.satellite.save_rgb_image(rgb_array, image_rgb_path)
-            except Exception as e:
-                print(f"❌ Erreur extraction RGB: {e}")
-                image_rgb_path = None
+            # Détection des anomalies par Isolation Forest (nouvelle méthode)
+            results = self.satellite.detect_stress_isolation_forest(indices_dict)
 
-            # Sauvegarder les images
-            image_ndvi_path = self.output_dir / f"analyse_{parcelle_id}_ndvi.png"
-            image_multi_path = self.output_dir / f"analyse_{parcelle_id}_multi.png"
-            
-            self.satellite.plot_ndvi(
-                ndvi,
-                results['masque'],
-                f"Parcelle {nom} - {date_image}",
-                save_path=image_ndvi_path
-            )
-            
-            self.satellite.plot_all_indices(
-                all_indices,
-                results['masque'],
-                save_path=image_multi_path
-            )
-            
-            # Calculs
-            ratio_infection = results['pixels_malades'] / results['pixels_total']
+            # Classification des zones (eau, urbain, désert, végétation)
+            zone_results = self.satellite.classify_zones(indices_dict)
+            zone_type = zone_results['zone_type']
+            zone_warning = zone_results['warning']
+            zone_confidence = zone_results['confidence']
+
+            ratio_infection = results['pourcentage_stress'] / 100.0
             surface_infectee_ha = surface_ha * ratio_infection
             plants_infectes = int(surface_infectee_ha * plants_per_ha)
-            
-            print(f"✅ Analyse satellite terminée")
+
+            # Sauvegarder la carte de stress (indices + masque)
+            image_ndvi_path = self.output_dir / f"analyse_{parcelle_id}_ndvi.png"
+            self.satellite.plot_stress_map(
+                indices_dict,
+                results['masque_stress'],
+                save_path=image_ndvi_path
+            )
+
+            # Sauvegarder l'image RGB true-color si disponible
+            image_rgb_path = None
+            if rgb_array is not None:
+                image_rgb_path = self.output_dir / f"analyse_{parcelle_id}_rgb.png"
+                import matplotlib.pyplot as plt
+                plt.imsave(str(image_rgb_path), rgb_array)
+                print(f"✅ Image RGB sauvegardée : {image_rgb_path}")
+
+            print(f"✅ Analyse satellite terminée (source: {source})")
             print(f"   Date image: {date_image}")
+            print(f"   Zone dominante: {zone_type}")
             print(f"   Taux infection: {ratio_infection*100:.1f}%")
             print(f"   Surface infectée: {surface_infectee_ha:.2f} ha")
             print(f"   Plants infectés: {plants_infectes}")
-            
+
+            # Pas d'image multi pour l'instant
+            image_multi_path = None
+
         except Exception as e:
             print(f"❌ Erreur satellite: {e}")
             # Fallback avec simulateur
@@ -144,33 +132,33 @@ class AnalyseEngine:
             sim = SatelliteSimulator(self.config)
             ndvi = sim.generate_ndvi_image(avec_maladies=True)
             results = sim.calculate_infected_area(ndvi, seuil=0.35)
-            zone_type = results.get('zone_type', 'simulated')
-            zone_confidence = results.get('zone_confidence', 1.0)
-            zone_warning = results.get('warning')
+            source = 'simulation'
 
-            ratio_infection = results['pixels_malades'] / results['pixels_total']
+            ratio_infection = results['pourcentage_malade'] / 100.0
             surface_infectee_ha = surface_ha * ratio_infection
             plants_infectes = int(surface_infectee_ha * plants_per_ha)
             date_image = "simulation"
-            
-            # Sauvegarder les images du simulateur
+
+            # Classification non disponible en simulation
+            zone_type = 'simulation'
+            zone_warning = None
+            zone_confidence = 0.0
+
+            # Sauvegarder l'image du simulateur
             image_ndvi_path = self.output_dir / f"analyse_{parcelle_id}_ndvi.png"
-            image_multi_path = self.output_dir / f"analyse_{parcelle_id}_multi.png"
-            
+            image_multi_path = None
+            image_rgb_path = None
+
             sim.plot_ndvi(
                 ndvi,
                 results['masque'],
                 f"Parcelle {nom} - {date_image}",
                 save_path=image_ndvi_path
             )
-            
-            # Pour le multi-spectral en fallback, utiliser l'image NDVI
-            shutil.copy(str(image_ndvi_path), str(image_multi_path))
-            
+
             print(f"✅ Analyse satellite simulée (fallback)")
             print(f"   Taux infection: {ratio_infection*100:.1f}%")
-            print(f"   Images sauvegardées: {image_ndvi_path}")
-            image_rgb_path = None
+            print(f"   Image sauvegardée: {image_ndvi_path}")
         
         # 2. ANALYSE MÉTÉO
         print("\n🌤️ ÉTAPE 2 - ANALYSE MÉTÉO")
@@ -207,7 +195,37 @@ class AnalyseEngine:
         print(f"   Risque: {risk['couleur']} {risk['niveau']}")
         print(f"   Évolution 7j: {risk['augmentation']*100:+.1f}%")
         print(f"   Plants dans 7j: {risk['infectes_futur']}")
-        
+
+        # ✅ Adapter les messages selon le type de zone
+        zone_type_local = zone_type
+        risk_level = risk['niveau']
+        action_msg = risk['action']
+
+        # Dictionnaire des messages contextualisés par zone
+        ZONE_MESSAGES = {
+            'eau': {
+                'risque': 'INFO',
+                'action': '🌊 Parcelle située en zone aquatique (rivière/lac). Aucune culture agricole détectée. Vérifiez l\'emplacement de la parcelle.'
+            },
+            'urbain_sol_nu': {
+                'risque': 'INFO',
+                'action': '🏗️ Zone urbaine ou sol nu détecté. La parcelle ne semble pas être une zone agricole cultivée.'
+            },
+            'desert': {
+                'risque': 'MODÉRÉ',
+                'action': '🏜️ Sol très aride détecté. Irrigation et amendement organique nécessaires avant toute plantation.'
+            },
+            'zone_humide': {
+                'risque': 'ÉLEVÉ',
+                'action': '💧 Zone humide détectée. Risque de pourrissement des racines. Drainage recommandé avant culture.'
+            },
+        }
+
+        if zone_type_local in ZONE_MESSAGES:
+            risk_level = ZONE_MESSAGES[zone_type_local]['risque']
+            action_msg = ZONE_MESSAGES[zone_type_local]['action']
+            print(f"   ℹ️ Message adapté à la zone « {zone_type_local} »")
+
         # ✅ CONVERSION DES TYPES NUMPY EN TYPES PYTHON NATIFS
         result = {
             'date_analyse': datetime.now().isoformat(),
@@ -218,13 +236,14 @@ class AnalyseEngine:
             'temperature_moyenne': float(weather_data['temperature']),
             'humidite_moyenne': int(weather_data['humidite']),
             'vent_moyen': float(weather_data['vent']),
-            'risque': str(risk['niveau']),
+            'risque': risk_level,
             'evolution_7j': float(round(risk['augmentation'] * 100, 1)),
             'plants_infectes_7j': int(risk['infectes_futur']),
-            'action_recommandee': str(risk['action']),
-            'zone_type': zone_type,
+            'action_recommandee': action_msg,
+            'source': source,
+            'zone_type': zone_type_local,
             'zone_warning': zone_warning,
-            'zone_confidence': float(zone_confidence),
+            'zone_confidence': zone_confidence,
             'image_ndvi_path': str(image_ndvi_path) if image_ndvi_path else None,
             'image_multi_path': str(image_multi_path) if image_multi_path else None,
             'image_rgb_path': str(image_rgb_path) if image_rgb_path else None,

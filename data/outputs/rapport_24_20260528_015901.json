@@ -1,0 +1,21 @@
+{
+  "date_analyse": "2026-05-28T01:59:01.449764",
+  "date_image_satellite": "2026-05-25",
+  "taux_infection": 10.1,
+  "surface_infectee_ha": 0.19,
+  "plants_infectes": 1892,
+  "temperature_moyenne": 27.2,
+  "humidite_moyenne": 82,
+  "vent_moyen": 2.6,
+  "risque": "INFO",
+  "evolution_7j": 40.4,
+  "plants_infectes_7j": 2657,
+  "action_recommandee": "\ud83c\udf0a Parcelle situ\u00e9e en zone aquatique (rivi\u00e8re/lac). Aucune culture agricole d\u00e9tect\u00e9e. V\u00e9rifiez l'emplacement de la parcelle.",
+  "source": "optique",
+  "zone_type": "eau",
+  "zone_warning": "Parcelle majoritairement aquatique \u2014 risque d'inondation",
+  "zone_confidence": 1.0,
+  "image_ndvi_path": "E:\\EADL\\EADL\\PROJET TUTOR\u00c9\\agrovision-ai\\data\\outputs\\analyse_24_ndvi.png",
+  "image_multi_path": null,
+  "image_rgb_path": "E:\\EADL\\EADL\\PROJET TUTOR\u00c9\\agrovision-ai\\data\\outputs\\analyse_24_rgb.png"
+}

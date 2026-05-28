@@ -1,0 +1,21 @@
+{
+  "date_analyse": "2026-05-28T01:36:02.554016",
+  "date_image_satellite": "simulation",
+  "taux_infection": 6.0,
+  "surface_infectee_ha": 199.34,
+  "plants_infectes": 1993408,
+  "temperature_moyenne": 27.1,
+  "humidite_moyenne": 83,
+  "vent_moyen": 1.9,
+  "risque": "\u00c9LEV\u00c9",
+  "evolution_7j": 69.1,
+  "plants_infectes_7j": 3371254,
+  "action_recommandee": "Intervention recommand\u00e9e - Traitez les zones infect\u00e9es",
+  "source": "simulation",
+  "zone_type": "simulation",
+  "zone_warning": null,
+  "zone_confidence": 0.0,
+  "image_ndvi_path": "E:\\EADL\\EADL\\PROJET TUTOR\u00c9\\agrovision-ai\\data\\outputs\\analyse_22_ndvi.png",
+  "image_multi_path": null,
+  "image_rgb_path": null
+}
