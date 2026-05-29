@@ -30,7 +30,7 @@ class SatelliteSimulator:
         """
         self.config = config
         self.image_size = 100  # 100x100 pixels pour commencer
-        logger.info("✅ Simulateur satellite initialisé")
+        logger.info(" Simulateur satellite initialisé")
     
     def generate_ndvi_image(self, avec_maladies=True):
         """
@@ -74,7 +74,7 @@ class SatelliteSimulator:
         # 4. S'assurer que les valeurs restent entre -1 et 1 (NDVI théorique)
         ndvi = np.clip(ndvi, -1, 1)
         
-        logger.info(f"✅ Image générée : {ndvi.shape}, min={ndvi.min():.2f}, max={ndvi.max():.2f}")
+        logger.info(f" Image générée : {ndvi.shape}, min={ndvi.min():.2f}, max={ndvi.max():.2f}")
         
         return ndvi
     
@@ -176,12 +176,12 @@ class SatelliteSimulator:
         if save_path:
             Path(save_path).parent.mkdir(parents=True, exist_ok=True)
             plt.savefig(save_path, dpi=150)
-            logger.info(f"✅ Graphique sauvegardé : {save_path}")
+            logger.info(f" Graphique sauvegardé : {save_path}")
         else:
             output_path = Path(self.config['outputs']['save_path'])
             output_path.mkdir(parents=True, exist_ok=True)
             plt.savefig(output_path / 'simulation_ndvi.png', dpi=150)
-            logger.info(f"✅ Graphique sauvegardé dans {output_path / 'simulation_ndvi.png'}")
+            logger.info(f" Graphique sauvegardé dans {output_path / 'simulation_ndvi.png'}")
         if show:
             plt.show()
         plt.close(fig)
@@ -214,4 +214,4 @@ if __name__ == "__main__":
     # Afficher
     sim.plot_ndvi(ndvi, resultats['masque'], "Simulation NDVI avec zones malades")
     
-    print("\n✅ Test terminé !")
+    print("\n Test terminé !")

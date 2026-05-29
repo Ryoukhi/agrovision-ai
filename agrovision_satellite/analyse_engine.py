@@ -15,7 +15,7 @@ from modules.satellite_real import RealSatellite
 from modules.weather_api import WeatherAPI
 from modules.spread_model import EpidemiologicalModel
 
-# ✅ CONVERTISSEUR JSON POUR TYPES NUMPY
+#  CONVERTISSEUR JSON POUR TYPES NUMPY
 class NumpyEncoder(json.JSONEncoder):
     """JSON Encoder spécial pour les types NumPy"""
     def default(self, obj):
@@ -51,7 +51,7 @@ class AnalyseEngine:
         if not self.output_dir.is_absolute():
             self.output_dir = Path(__file__).parent.parent / self.output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        print(f"📁 Output directory: {self.output_dir}")
+        print(f"Output directory: {self.output_dir}")
     
     def run_analyse(self, parcelle_id, nom, coords, surface_ha, plants_per_ha=10000):
         """
@@ -68,22 +68,23 @@ class AnalyseEngine:
             dict: Résultats de l'analyse
         """
         print(f"\n{'='*60}")
-        print(f"🚀 ANALYSE POUR PARCELLE: {nom} (ID: {parcelle_id})")
+        print(f"[START] ANALYSE PARCELLE: {nom} (ID: {parcelle_id})")
         print(f"{'='*60}")
         
         # 1. ANALYSE SATELLITE
-        print("\n🛰️ ÉTAPE 1 - ANALYSE SATELLITE")
+        print("\n ETAPE 1 - ANALYSE SATELLITE")
         
-        # Période d'analyse (60 derniers jours)
+        # Période d'analyse (120 jours → couvre une saison complète, essentiel
+        # en zone tropicale où la couverture nuageuse est forte pendant l'hivernage)
         date_fin = datetime.now().strftime('%Y-%m-%d')
-        date_debut = (datetime.now() - timedelta(days=60)).strftime('%Y-%m-%d')
+        date_debut = (datetime.now() - timedelta(days=120)).strftime('%Y-%m-%d')
         
         try:
             indices_dict, source, date_image, roi_eroded, rgb_array = self.satellite.get_multi_index_image(
                 coords,
                 date_debut,
                 date_fin,
-                max_cloud=20
+                max_cloud=60  # plus permissif → le composite médian atténue les nuages résiduels
             )
 
             # Détection des anomalies par Isolation Forest (nouvelle méthode)
@@ -99,23 +100,24 @@ class AnalyseEngine:
             surface_infectee_ha = surface_ha * ratio_infection
             plants_infectes = int(surface_infectee_ha * plants_per_ha)
 
-            # Sauvegarder la carte de stress (indices + masque)
+            # Générer la carte de stress (fond réel si RGB dispo, sinon RdYlGn)
             image_ndvi_path = self.output_dir / f"analyse_{parcelle_id}_ndvi.png"
             self.satellite.plot_stress_map(
                 indices_dict,
                 results['masque_stress'],
-                save_path=image_ndvi_path
+                save_path=image_ndvi_path,
+                rgb_array=rgb_array
             )
 
-            # Sauvegarder l'image RGB true-color si disponible
+            # Sauvegarder l'image RGB true-color séparée
             image_rgb_path = None
             if rgb_array is not None:
                 image_rgb_path = self.output_dir / f"analyse_{parcelle_id}_rgb.png"
                 import matplotlib.pyplot as plt
                 plt.imsave(str(image_rgb_path), rgb_array)
-                print(f"✅ Image RGB sauvegardée : {image_rgb_path}")
+                print(f" Image RGB sauvegardée : {image_rgb_path}")
 
-            print(f"✅ Analyse satellite terminée (source: {source})")
+            print(f" Analyse satellite terminée (source: {source})")
             print(f"   Date image: {date_image}")
             print(f"   Zone dominante: {zone_type}")
             print(f"   Taux infection: {ratio_infection*100:.1f}%")
@@ -126,7 +128,7 @@ class AnalyseEngine:
             image_multi_path = None
 
         except Exception as e:
-            print(f"❌ Erreur satellite: {e}")
+            print(f"[ERR] Erreur satellite: {e}")
             # Fallback avec simulateur
             from modules.satellite_simulator import SatelliteSimulator
             sim = SatelliteSimulator(self.config)
@@ -156,34 +158,37 @@ class AnalyseEngine:
                 save_path=image_ndvi_path
             )
 
-            print(f"✅ Analyse satellite simulée (fallback)")
+            print(f" Analyse satellite simulée (fallback)")
             print(f"   Taux infection: {ratio_infection*100:.1f}%")
             print(f"   Image sauvegardée: {image_ndvi_path}")
         
         # 2. ANALYSE MÉTÉO
-        print("\n🌤️ ÉTAPE 2 - ANALYSE MÉTÉO")
+        print("\n ÉTAPE 2 - ANALYSE MÉTÉO")
         
         lat = (coords[1] + coords[3]) / 2
         lon = (coords[0] + coords[2]) / 2
         
-        forecast = self.weather.get_forecast(lat, lon, 7)
-        
-        if forecast:
-            weather_data = {
-                'temperature': round(sum(f['temperature'] for f in forecast) / len(forecast), 1),
-                'humidite': round(sum(f['humidite'] for f in forecast) / len(forecast)),
-                'vent': round(sum(f['vent'] for f in forecast) / len(forecast), 1)
-            }
-            print(f"✅ Météo récupérée")
-            print(f"   Temp: {weather_data['temperature']}°C")
-            print(f"   Humidité: {weather_data['humidite']}%")
-            print(f"   Vent: {weather_data['vent']} m/s")
+        # 2a. Température ACTUELLE (temps réel) pour le rapport
+        current = self.weather.get_current_weather(lat, lon)
+        if current:
+            weather_data = current
+            print(f" Meteo actuelle: {weather_data['temperature']}C, {weather_data['humidite']}%, {weather_data['vent']} m/s")
         else:
-            weather_data = {'temperature': 25, 'humidite': 70, 'vent': 2}
-            print(f"⚠️ Météo simulée")
+            # Fallback: moyenne de la prévision 7 jours
+            forecast = self.weather.get_forecast(lat, lon, 7)
+            if forecast:
+                weather_data = {
+                    'temperature': round(sum(f['temperature'] for f in forecast) / len(forecast), 1),
+                    'humidite': round(sum(f['humidite'] for f in forecast) / len(forecast)),
+                    'vent': round(sum(f['vent'] for f in forecast) / len(forecast), 1)
+                }
+                print(f" Prevision moy: {weather_data['temperature']}C, {weather_data['humidite']}%, {weather_data['vent']} m/s")
+            else:
+                weather_data = {'temperature': 25, 'humidite': 70, 'vent': 2}
+                print(f" [WARN] Meteo simulee")
         
         # 3. PRÉDICTION DE PROPAGATION
-        print("\n📈 ÉTAPE 3 - PRÉDICTION")
+        print("\n ETAPE 3 - PREDICTION")
         
         total_plants = int(surface_ha * plants_per_ha)
         
@@ -191,12 +196,12 @@ class AnalyseEngine:
         df = self.model.predict_spread(total_plants, plants_infectes, jours=60)
         risk = self.model.calculate_risk(df, 7)
         
-        print(f"✅ Prédiction terminée")
+        print(f" Prédiction terminée")
         print(f"   Risque: {risk['couleur']} {risk['niveau']}")
         print(f"   Évolution 7j: {risk['augmentation']*100:+.1f}%")
         print(f"   Plants dans 7j: {risk['infectes_futur']}")
 
-        # ✅ Adapter les messages selon le type de zone
+        #  Adapter les messages selon le type de zone
         zone_type_local = zone_type
         risk_level = risk['niveau']
         action_msg = risk['action']
@@ -224,9 +229,9 @@ class AnalyseEngine:
         if zone_type_local in ZONE_MESSAGES:
             risk_level = ZONE_MESSAGES[zone_type_local]['risque']
             action_msg = ZONE_MESSAGES[zone_type_local]['action']
-            print(f"   ℹ️ Message adapté à la zone « {zone_type_local} »")
+            print(f"   Message adapte a la zone: {zone_type_local}")
 
-        # ✅ CONVERSION DES TYPES NUMPY EN TYPES PYTHON NATIFS
+        #  CONVERSION DES TYPES NUMPY EN TYPES PYTHON NATIFS
         result = {
             'date_analyse': datetime.now().isoformat(),
             'date_image_satellite': date_image,
@@ -254,7 +259,7 @@ class AnalyseEngine:
         with open(rapport_path, 'w') as f:
             json.dump(result, f, indent=2, cls=NumpyEncoder)
         
-        print(f"\n✅ ANALYSE TERMINÉE")
+        print(f"\n ANALYSE TERMINÉE")
         print(f"   Rapport: {rapport_path}")
         
         return result
@@ -269,5 +274,5 @@ if __name__ == "__main__":
         surface_ha=0.5,
         plants_per_ha=10000
     )
-    print("\n📊 RÉSULTAT:")
+    print("\n[RESULTAT]:")
     print(json.dumps(result, indent=2, ensure_ascii=False, cls=NumpyEncoder))

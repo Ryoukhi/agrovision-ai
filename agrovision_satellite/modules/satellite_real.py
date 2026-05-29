@@ -14,9 +14,10 @@ from datetime import datetime, timedelta
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
 from pathlib import Path
 import math
-from scipy.ndimage import zoom
+from scipy.ndimage import zoom, binary_dilation
 from sklearn.ensemble import IsolationForest
 import pyproj
 from shapely.geometry import Polygon
@@ -43,7 +44,7 @@ class RealSatellite:
         self.contamination = config.get('detection', {}).get('contamination', 0.1)
         self.max_cloud = config.get('satellite', {}).get('max_cloud_percent', 20)
         self.surface_totale_ha = config['parcelle']['surface_ha']
-        print(f"✅ Module satellite réel : buffer={self.buffer_meters}m, contamination={self.contamination}, max_cloud={self.max_cloud}%, surface_config={self.surface_totale_ha}ha")
+        print(f"[SAT] Module satellite reel: buffer={self.buffer_meters}m, contamination={self.contamination}, max_cloud={self.max_cloud}%, surface_config={self.surface_totale_ha}ha")
 
     def _initialize_ee(self):
         """Initialise Google Earth Engine avec le projet spécifié dans la config"""
@@ -55,12 +56,12 @@ class RealSatellite:
                 logger.warning("⚠️ Initialisation GEE sans project_id explicite")
             else:
                 ee.Initialize(project=project_id)
-                logger.info(f"✅ Google Earth Engine connecté avec le projet {project_id}")
+                logger.info(f" Google Earth Engine connecté avec le projet {project_id}")
             # Test simple pour valider l'accès
             test_point = ee.Geometry.Point([12.55, 4.55])
             test_col = ee.ImageCollection('COPERNICUS/S2_HARMONIZED').filterBounds(test_point).limit(1)
             count = test_col.size().getInfo()
-            logger.info(f"✅ Test GEE réussi : {count} image(s) trouvée(s) pour un point test")
+            logger.info(f" Test GEE réussi : {count} image(s) trouvée(s) pour un point test")
         except Exception as e:
             logger.error(f"❌ Erreur d'initialisation Earth Engine: {e}")
             raise e
@@ -110,7 +111,7 @@ class RealSatellite:
             # Reprojeter en WGS84
             eroded_wgs84 = transform(project_to_wgs84, eroded)
             coords_list = list(eroded_wgs84.exterior.coords)
-            logger.info(f"✅ Buffer négatif appliqué : {self.buffer_meters}m, surface résultante {eroded.area:.0f} m²")
+            logger.info(f" Buffer négatif appliqué : {self.buffer_meters}m, surface résultante {eroded.area:.0f} m²")
             return ee.Geometry.Polygon(coords_list)
 
         except Exception as e:
@@ -162,8 +163,10 @@ class RealSatellite:
             logger.info(f"🛰️ Composite médian Sentinel-2 (dernière image : {date_image}, {s2_count} images)")
 
             # Calcul des indices
+            # Sentinel-2 HARMONIZED fournit la réflectance ×10000,
+            # donc le +1 du dénominateur EVI devient +10000
             evi = median_s2.expression(
-                '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))',
+                '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 10000))',
                 {
                     'NIR': median_s2.select('B8'),
                     'RED': median_s2.select('B4'),
@@ -258,8 +261,11 @@ class RealSatellite:
                 if h < target_side or w < target_side:
                     zoom_y = max(target_side / h, 1.0)
                     zoom_x = max(target_side / w, 1.0)
-                    rgb_array = zoom(rgb_array.astype(np.float64), (zoom_y, zoom_x, 1), order=1)
-                    rgb_array = np.clip(rgb_array, 0, 255).astype(np.uint8)
+                    rgb_array = zoom(rgb_array.astype(np.float64), (zoom_y, zoom_x, 1), order=3)  # bicubic
+                    # Unsharp mask pour renforcer les détails
+                    from scipy.ndimage import gaussian_filter
+                    blurred = gaussian_filter(rgb_array, sigma=0.6)
+                    rgb_array = np.clip(rgb_array + (rgb_array - blurred) * 0.4, 0, 255).astype(np.uint8)
                 print(f"   RGB : shape {rgb_array.shape}, stretch [{stretch_min:.0f}–{stretch_max:.0f}]")
             except Exception as e:
                 print(f"   ⚠️ Impossible d'extraire l'image RGB : {e}")
@@ -354,36 +360,98 @@ class RealSatellite:
             'n_features': len(indices_dict)
         }
 
-    def plot_stress_map(self, indices_dict, masque_stress, save_path=None, show=False):
+    def plot_stress_map(self, indices_dict, masque_stress, save_path=None, show=False, rgb_array=None):
         """
-        Génère une visualisation : premier indice (ex: EVI) et superposition des anomalies.
+        Génère une visualisation interprétable par un agriculteur.
+
+        Si rgb_array est fourni → superposition pro (type Spotifarm) :
+          Panel gauche  : image satellite réelle
+          Panel droit   : image satellite + zones stress en rouge
+
+        Sinon → fallback RdYlGn (pour radar/simulation)
 
         Args:
             indices_dict: dictionnaire des indices
             masque_stress: masque booléen des anomalies
-            save_path: chemin de sauvegarde (optionnel)
+            save_path: chemin de sauvegarde
             show: afficher interactivement
+            rgb_array: image RGB (H,W,3) optionnelle pour fond réel
         """
-        # Utiliser le premier indice comme fond
-        first_name = list(indices_dict.keys())[0]
-        base_image = indices_dict[first_name]
+        pct = int(np.sum(masque_stress) / max(masque_stress.size, 1) * 100)
+        ha_stress = self.surface_totale_ha * pct / 100
 
-        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-        im1 = axes[0].imshow(base_image, cmap='viridis')
-        axes[0].set_title(f'{first_name}')
-        plt.colorbar(im1, ax=axes[0])
+        # Si RGB disponible, redimensionner le masque pour qu'il s'aligne
+        if rgb_array is not None:
+            h_rgb, w_rgb = rgb_array.shape[:2]
+            h_msk, w_msk = masque_stress.shape[:2]
+            if (h_rgb, w_rgb) != (h_msk, w_msk):
+                zy, zx = h_rgb / h_msk, w_rgb / w_msk
+                stress_viz = zoom(masque_stress.astype(np.float64), (zy, zx), order=0) > 0.5
+            else:
+                stress_viz = masque_stress
 
-        # Superposition des anomalies en rouge
-        overlay = np.ma.masked_where(~masque_stress, base_image)
-        axes[1].imshow(base_image, cmap='viridis')
-        axes[1].imshow(overlay, cmap='Reds', alpha=0.7)
-        axes[1].set_title('Zones de stress détectées (rouge)')
-        plt.colorbar(im1, ax=axes[1])
+            # ─── Rendu pro : image satellite réelle + stress overlay ───
+            fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
 
-        plt.tight_layout()
+            # Panel 1 : image satellite brute
+            axes[0].imshow(rgb_array)
+            axes[0].set_title('🛰️ Image satellite réelle', fontsize=13, fontweight='bold')
+            axes[0].set_xlabel('Vue true-color de la parcelle', fontsize=9, color='#555')
+
+            # Panel 2 : image satellite + stress overlay rouge
+            axes[1].imshow(rgb_array)
+            # Overlay rouge semi-transparent sur les zones stressées
+            stress_colored = np.zeros((*stress_viz.shape, 4), dtype=np.float64)
+            stress_colored[stress_viz] = [1.0, 0.0, 0.0, 0.55]  # RGBA
+            axes[1].imshow(stress_colored)
+            # Contours blancs autour des zones de stress
+            edges = stress_viz.astype(int) - binary_dilation(stress_viz, iterations=1).astype(int)
+            edges_rgba = np.zeros((*stress_viz.shape, 4), dtype=np.float64)
+            edges_rgba[edges > 0] = [1.0, 1.0, 1.0, 0.8]
+            axes[1].imshow(edges_rgba)
+
+            axes[1].set_title('🔴 Zones de stress détectées', fontsize=13, fontweight='bold')
+            axes[1].set_xlabel(f'{pct}% de la parcelle — {ha_stress:.2f} ha touchés', fontsize=10, color='#c62828')
+
+            fig.text(0.5, 0.01,
+                     f"🔴 Rouge = stress / maladie détecté  |  {pct}% de la parcelle touchée",
+                     ha='center', fontsize=10, color='#444',
+                     bbox=dict(boxstyle='round,pad=0.5', facecolor='#f5f5f5', edgecolor='#ddd'))
+
+            plt.tight_layout(rect=[0, 0.04, 1, 1])
+
+        else:
+            # ─── Fallback : RdYlGn (quand pas d'image RGB) ───
+            first_name = list(indices_dict.keys())[0]
+            base_image = indices_dict[first_name]
+
+            fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
+
+            vmin, vmax = np.percentile(base_image[base_image > -999], [2, 98])
+            im = axes[0].imshow(base_image, cmap='RdYlGn', vmin=vmin, vmax=vmax)
+            axes[0].set_title('🌿 Santé de la végétation', fontsize=13, fontweight='bold')
+            axes[0].set_xlabel('Vert = sain  →  Jaune = modéré  →  Rouge = stressé', fontsize=9, color='#555')
+            cbar = plt.colorbar(im, ax=axes[0], shrink=0.8)
+            cbar.set_label('Indice ' + first_name, fontsize=9)
+
+            axes[1].imshow(base_image, cmap='RdYlGn', vmin=vmin, vmax=vmax)
+            overlay = np.ma.masked_where(~masque_stress, np.ones_like(base_image))
+            axes[1].imshow(overlay, cmap=ListedColormap(['#D32F2F']), alpha=0.55, vmin=0, vmax=1)
+            edges = masque_stress.astype(int) - binary_dilation(masque_stress, iterations=1).astype(int)
+            axes[1].imshow(np.ma.masked_where(edges == 0, edges), cmap=ListedColormap(['white']), alpha=0.7)
+            axes[1].set_title('🔴 Zones de stress détectées', fontsize=13, fontweight='bold')
+            axes[1].set_xlabel(f'{pct}% de la parcelle — {ha_stress:.2f} ha touchés', fontsize=10, color='#c62828')
+
+            fig.text(0.5, 0.01,
+                     f"🌱 Vert = sain  |  🟡 Jaune = vigilance  |  🔴 Rouge = stress / maladie",
+                     ha='center', fontsize=10, color='#444',
+                     bbox=dict(boxstyle='round,pad=0.5', facecolor='#f5f5f5', edgecolor='#ddd'))
+
+            plt.tight_layout(rect=[0, 0.04, 1, 1])
+
         if save_path:
-            plt.savefig(save_path, dpi=150)
-            print(f"✅ Carte de stress sauvegardée : {save_path}")
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f" Carte de stress sauvegardée : {save_path}")
         if show:
             plt.show()
         plt.close(fig)

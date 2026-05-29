@@ -83,5 +83,5 @@ print(f"   Action recommandée: {risque['action']}")
 modele.plot_prediction(df)
 
 print("\n" + "="*60)
-print("✅ TEST COMPLET TERMINÉ")
+print(" TEST COMPLET TERMINÉ")
 print("="*60)

@@ -37,7 +37,7 @@ class EpidemiologicalModel:
             'wind': 1.0
         }
         
-        logger.info("✅ Modèle épidémiologique initialisé")
+        logger.info(" Modèle épidémiologique initialisé")
     
     def adjust_for_weather(self, weather_data):
         """
@@ -141,7 +141,7 @@ class EpidemiologicalModel:
         for col in ['Sains', 'Exposes', 'Infectes', 'Retires', 'Total_infectes']:
             df[col] = df[col].round().astype(int)
         
-        logger.info(f"✅ Prédiction terminée")
+        logger.info(f" Prédiction terminée")
         
         return df
     

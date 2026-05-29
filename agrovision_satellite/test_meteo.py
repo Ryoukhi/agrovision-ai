@@ -18,7 +18,7 @@ with open('config.yaml', 'r') as f:
     config = yaml.safe_load(f)
 
 api_key = config['meteo']['api_key']
-print(f"✅ Clé API chargée: {api_key[:5]}...{api_key[-5:]}")
+print(f" Clé API chargée: {api_key[:5]}...{api_key[-5:]}")
 
 # 2. Créer le client météo
 print("\n🌍 Création du client météo...")
@@ -38,5 +38,5 @@ previsions = weather.get_forecast(lat, lon, 7)
 weather.afficher_previsions(previsions)
 
 print("\n" + "="*60)
-print("✅ Test terminé")
+print(" Test terminé")
 print("="*60)

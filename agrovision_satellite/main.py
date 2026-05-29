@@ -58,7 +58,7 @@ class AgroVisionPipeline:
         # Charger la configuration
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
-        logger.info("✅ Configuration chargée")
+        logger.info(" Configuration chargée")
         
         # Créer les dossiers de sortie
         self.output_dir = Path(self.config['outputs']['save_path'])
@@ -116,7 +116,7 @@ class AgroVisionPipeline:
                 coords, date_debut, date_fin, max_cloud=20
             )
             
-            logger.info(f"✅ Source: {source.upper()}, Image du {date_image}")
+            logger.info(f" Source: {source.upper()}, Image du {date_image}")
             for name, arr in indices_dict.items():
                 logger.info(f"   {name}: shape={arr.shape}, min={arr.min():.3f}, max={arr.max():.3f}, moy={arr.mean():.3f}")
             
@@ -321,7 +321,7 @@ class AgroVisionPipeline:
         with open(report_path, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
         
-        logger.info(f"✅ Rapport sauvegardé: {report_path}")
+        logger.info(f" Rapport sauvegardé: {report_path}")
         
         return report
     
@@ -359,7 +359,7 @@ class AgroVisionPipeline:
         print(f"   Prochaine analyse: {report['recommandations']['prochaine_analyse']}")
         
         print("\n" + "="*70)
-        print("✅ Analyse terminée - Rapport sauvegardé")
+        print(" Analyse terminée - Rapport sauvegardé")
         print("="*70)
     
     def run(self):
@@ -383,7 +383,7 @@ class AgroVisionPipeline:
             self.print_summary(report)
             
             logger.info("\n" + "="*60)
-            logger.info("✅ PIPELINE TERMINÉ AVEC SUCCÈS")
+            logger.info(" PIPELINE TERMINÉ AVEC SUCCÈS")
             logger.info("="*60)
             
             return report

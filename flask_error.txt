@@ -1,0 +1,27 @@
+C:\Users\User\AppData\Local\Programs\Python\Python310\lib\site-packages\google\api_core\_python_version_support.py:275: FutureWarning: You are using a Python version (3.10.11) which Google will stop supporting in new releases of google.api_core once it reaches its end of life (2026-10-04). Please upgrade to the latest Python version, or at least Python 3.11, to continue receiving updates for google.api_core past that date.
+  warnings.warn(message, FutureWarning)
+Traceback (most recent call last):
+  File "E:\EADL\EADL\PROJET TUTORÉ\agrovision-ai\backend\services\analyse_service.py", line 28, in __init__
+    self.engine = AnalyseEngine(config_path)
+  File "E:\EADL\EADL\PROJET TUTORÉ\agrovision-ai\agrovision_satellite\analyse_engine.py", line 44, in __init__
+    self.satellite = RealSatellite(self.config)
+  File "E:\EADL\EADL\PROJET TUTORÉ\agrovision-ai\agrovision_satellite\modules\satellite_real.py", line 47, in __init__
+    print(f"\u2705 Module satellite réel : buffer={self.buffer_meters}m, contamination={self.contamination}, max_cloud={self.max_cloud}%, surface_config={self.surface_totale_ha}ha")
+  File "C:\Users\User\AppData\Local\Programs\Python\Python310\lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2705' in position 0: character maps to <undefined>
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "E:\EADL\EADL\PROJET TUTORÉ\agrovision-ai\backend\app.py", line 74, in <module>
+    app = create_app()
+  File "E:\EADL\EADL\PROJET TUTORÉ\agrovision-ai\backend\app.py", line 48, in create_app
+    from routes.analyses import analyses_bp
+  File "E:\EADL\EADL\PROJET TUTORÉ\agrovision-ai\backend\routes\analyses.py", line 20, in <module>
+    analyse_service = AnalyseService()
+  File "E:\EADL\EADL\PROJET TUTORÉ\agrovision-ai\backend\services\analyse_service.py", line 31, in __init__
+    print(f"\u274c Erreur initialisation moteur: {e}")
+  File "C:\Users\User\AppData\Local\Programs\Python\Python310\lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+UnicodeEncodeError: 'charmap' codec can't encode character '\u274c' in position 0: character maps to <undefined>

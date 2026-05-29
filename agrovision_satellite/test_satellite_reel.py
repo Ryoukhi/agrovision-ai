@@ -43,7 +43,7 @@ def main():
             '2026-03-01',
             max_cloud=20
         )
-        print(f"✅ Image du {date} récupérée (source: {source})")
+        print(f" Image du {date} récupérée (source: {source})")
         for name, arr in indices_dict.items():
             print(f"   {name}: {arr.shape}, min={arr.min():.2f}, max={arr.max():.2f}")
         
@@ -71,7 +71,7 @@ def main():
         traceback.print_exc()
         return 1
     
-    print("\n✅ Test terminé avec succès")
+    print("\n Test terminé avec succès")
     return 0
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ print("="*60)
 print("\n📂 Chargement de la configuration...")
 with open('config.yaml', 'r') as f:
     config = yaml.safe_load(f)
-print("✅ Configuration chargée")
+print(" Configuration chargée")
 
 # 2. Créer le simulateur
 print("\n🛰️ Création du simulateur...")
@@ -52,4 +52,4 @@ print(f"\nChamp sain: {resultats_sain['pourcentage_malade']:.1f}% de pixels 'mal
 print(f"Champ malade: {resultats_malade['pourcentage_malade']:.1f}% de pixels malades")
 print(f"→ Différence: {resultats_malade['pourcentage_malade'] - resultats_sain['pourcentage_malade']:.1f}%")
 
-print("\n✅ Tests terminés !")
+print("\n Tests terminés !")

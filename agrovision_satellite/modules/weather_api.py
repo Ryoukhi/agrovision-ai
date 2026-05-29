@@ -25,7 +25,7 @@ class WeatherAPI:
         """
         self.api_key = api_key
         self.base_url = "http://api.openweathermap.org/data/2.5"
-        logger.info("✅ Module météo initialisé")
+        logger.info(" Module météo initialisé")
     
     def get_forecast(self, lat, lon, jours=7):
         """
@@ -69,7 +69,7 @@ class WeatherAPI:
             # Transformer les données
             previsions = self._process_forecast_data(data, jours)
             
-            logger.info(f"✅ {len(previsions)} jours de prévisions récupérés")
+            logger.info(f" {len(previsions)} jours de prévisions récupérés")
             return previsions
             
         except requests.exceptions.ConnectionError:
@@ -93,6 +93,37 @@ class WeatherAPI:
             logger.error(f"❌ Erreur inattendue: {e}")
             return self._get_dummy_forecast(jours)
     
+    def get_current_weather(self, lat, lon):
+        """Récupère la météo ACTUELLE (temps réel) pour une localisation
+
+        Args:
+            lat: latitude
+            lon: longitude
+
+        Returns:
+            dict: {'temperature': float, 'humidite': int, 'vent': float, 'description': str} ou None
+        """
+        try:
+            url = f"{self.base_url}/weather"
+            params = {
+                'lat': lat, 'lon': lon,
+                'appid': self.api_key,
+                'units': 'metric',
+                'lang': 'fr',
+            }
+            resp = requests.get(url, params=params, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            return {
+                'temperature': round(data['main']['temp'], 1),
+                'humidite': data['main']['humidity'],
+                'vent': round(data['wind']['speed'], 1),
+                'description': data['weather'][0]['description'],
+            }
+        except Exception as e:
+            logger.error(f" Erreur météo actuelle: {e}")
+            return None
+
     def _process_forecast_data(self, data, jours):
         """
         Transforme les données brutes de l'API en un format plus simple

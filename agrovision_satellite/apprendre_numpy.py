@@ -80,4 +80,4 @@ plt.title('Zones anormales détectées')
 plt.colorbar(label='Anomalie (1=oui)')
 plt.show()
 
-print("\n✅ Fini ! Tu viens de manipuler ta première 'image' !")
+print("\n Fini ! Tu viens de manipuler ta première 'image' !")
